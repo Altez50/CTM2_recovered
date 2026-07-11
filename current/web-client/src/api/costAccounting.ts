@@ -1,0 +1,337 @@
+import type { ApiResponse } from '../types/api'
+import type {
+  AllocationBase,
+  CostCalculation,
+  CostCardResponse,
+  CostElement,
+  DeviationsReportResponse,
+  LimitCheckResponse,
+  Machine,
+  MachineryUsageReport,
+  MaterialConsumption,
+  OverheadDistributionRequest,
+  OverheadDistributionResult,
+  OverheadExpense,
+  ProfitabilityReportResponse,
+  SubcontractAcceptance,
+  TurnoverReportResponse,
+} from '../types/costAccounting'
+import { apiRequest } from './client'
+
+interface ListParams {
+  page?: number
+  page_size?: number
+  search?: string
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
+  [key: string]: string | number | undefined
+}
+
+function toQuery(params: Record<string, string | number | undefined>) {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') {
+      query.set(key, String(value))
+    }
+  })
+  const value = query.toString()
+  return value ? `?${value}` : ''
+}
+
+// ── References ────────────────────────────────────────────────────────────
+
+export function listCostElements() {
+  return apiRequest<ApiResponse<CostElement[]>>('/api/cost/cost-elements')
+}
+
+export function listAllocationBases() {
+  return apiRequest<ApiResponse<AllocationBase[]>>('/api/cost/allocation-bases')
+}
+
+// ── Machines ──────────────────────────────────────────────────────────────
+
+export function listMachines(params: ListParams = {}) {
+  return apiRequest<ApiResponse<Machine[]>>(`/api/cost/machines${toQuery(params)}`)
+}
+
+export function getMachine(id: number) {
+  return apiRequest<ApiResponse<Machine>>(`/api/cost/machines/${id}`)
+}
+
+export function createMachine(payload: Machine) {
+  return apiRequest<ApiResponse<Machine>>('/api/cost/machines', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateMachine(id: number, payload: Machine) {
+  return apiRequest<ApiResponse<Machine>>(`/api/cost/machines/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteMachine(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/machines/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+// ── Material Consumptions ─────────────────────────────────────────────────
+
+export function listMaterialConsumptions(params: ListParams = {}) {
+  return apiRequest<ApiResponse<MaterialConsumption[]>>(
+    `/api/cost/material-consumptions${toQuery(params)}`,
+  )
+}
+
+export function getMaterialConsumption(id: number) {
+  return apiRequest<ApiResponse<MaterialConsumption>>(`/api/cost/material-consumptions/${id}`)
+}
+
+export function createMaterialConsumption(payload: MaterialConsumption) {
+  return apiRequest<ApiResponse<MaterialConsumption>>('/api/cost/material-consumptions', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateMaterialConsumption(id: number, payload: MaterialConsumption) {
+  return apiRequest<ApiResponse<MaterialConsumption>>(`/api/cost/material-consumptions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteMaterialConsumption(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/material-consumptions/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export function postMaterialConsumption(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/material-consumptions/${id}/post`, {
+    method: 'POST',
+  })
+}
+
+export function unpostMaterialConsumption(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/material-consumptions/${id}/unpost`, {
+    method: 'POST',
+  })
+}
+
+// ── Machinery Usage Reports ───────────────────────────────────────────────
+
+export function listMachineryUsageReports(params: ListParams = {}) {
+  return apiRequest<ApiResponse<MachineryUsageReport[]>>(
+    `/api/cost/machinery-usage-reports${toQuery(params)}`,
+  )
+}
+
+export function getMachineryUsageReport(id: number) {
+  return apiRequest<ApiResponse<MachineryUsageReport>>(`/api/cost/machinery-usage-reports/${id}`)
+}
+
+export function createMachineryUsageReport(payload: MachineryUsageReport) {
+  return apiRequest<ApiResponse<MachineryUsageReport>>('/api/cost/machinery-usage-reports', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateMachineryUsageReport(id: number, payload: MachineryUsageReport) {
+  return apiRequest<ApiResponse<MachineryUsageReport>>(`/api/cost/machinery-usage-reports/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteMachineryUsageReport(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/machinery-usage-reports/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export function postMachineryUsageReport(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/machinery-usage-reports/${id}/post`, {
+    method: 'POST',
+  })
+}
+
+export function unpostMachineryUsageReport(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/machinery-usage-reports/${id}/unpost`, {
+    method: 'POST',
+  })
+}
+
+// ── Subcontract Acceptances ───────────────────────────────────────────────
+
+export function listSubcontractAcceptances(params: ListParams = {}) {
+  return apiRequest<ApiResponse<SubcontractAcceptance[]>>(
+    `/api/cost/subcontract-acceptances${toQuery(params)}`,
+  )
+}
+
+export function getSubcontractAcceptance(id: number) {
+  return apiRequest<ApiResponse<SubcontractAcceptance>>(`/api/cost/subcontract-acceptances/${id}`)
+}
+
+export function createSubcontractAcceptance(payload: SubcontractAcceptance) {
+  return apiRequest<ApiResponse<SubcontractAcceptance>>('/api/cost/subcontract-acceptances', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateSubcontractAcceptance(id: number, payload: SubcontractAcceptance) {
+  return apiRequest<ApiResponse<SubcontractAcceptance>>(
+    `/api/cost/subcontract-acceptances/${id}`,
+    { method: 'PUT', body: JSON.stringify(payload) },
+  )
+}
+
+export function deleteSubcontractAcceptance(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/subcontract-acceptances/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export function postSubcontractAcceptance(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/subcontract-acceptances/${id}/post`, {
+    method: 'POST',
+  })
+}
+
+export function unpostSubcontractAcceptance(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/subcontract-acceptances/${id}/unpost`, {
+    method: 'POST',
+  })
+}
+
+// ── Overhead Expenses ─────────────────────────────────────────────────────
+
+export function listOverheadExpenses(params: ListParams = {}) {
+  return apiRequest<ApiResponse<OverheadExpense[]>>(
+    `/api/cost/overhead-expenses${toQuery(params)}`,
+  )
+}
+
+export function getOverheadExpense(id: number) {
+  return apiRequest<ApiResponse<OverheadExpense>>(`/api/cost/overhead-expenses/${id}`)
+}
+
+export function createOverheadExpense(payload: OverheadExpense) {
+  return apiRequest<ApiResponse<OverheadExpense>>('/api/cost/overhead-expenses', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateOverheadExpense(id: number, payload: OverheadExpense) {
+  return apiRequest<ApiResponse<OverheadExpense>>(`/api/cost/overhead-expenses/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteOverheadExpense(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/overhead-expenses/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+// ── Overhead Distribution ─────────────────────────────────────────────────
+
+export function distributeOverhead(payload: OverheadDistributionRequest) {
+  return apiRequest<ApiResponse<OverheadDistributionResult>>('/api/cost/overhead/distribute', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function cancelOverheadDistribution(period: string) {
+  return apiRequest<ApiResponse<{ period: string; cancelled: boolean }>>(
+    `/api/cost/overhead/cancel-distribution?period=${period}`,
+    { method: 'POST' },
+  )
+}
+
+// ── Cost Calculations ────────────────────────────────────────────────────
+
+export function listCostCalculations(params: ListParams = {}) {
+  return apiRequest<ApiResponse<CostCalculation[]>>(
+    `/api/cost/cost-calculations${toQuery(params)}`,
+  )
+}
+
+export function getCostCalculation(id: number) {
+  return apiRequest<ApiResponse<CostCalculation>>(`/api/cost/cost-calculations/${id}`)
+}
+
+export function createCostCalculation(payload: CostCalculation) {
+  return apiRequest<ApiResponse<CostCalculation>>('/api/cost/cost-calculations', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteCostCalculation(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/cost-calculations/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export function calculateCost(id: number) {
+  return apiRequest<ApiResponse<{ calculation_id: number; status: string; record_count: number }>>(
+    `/api/cost/cost-calculations/${id}/calculate`,
+    { method: 'POST' },
+  )
+}
+
+export function postCostCalculation(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/cost-calculations/${id}/post`, {
+    method: 'POST',
+  })
+}
+
+export function unpostCostCalculation(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/cost-calculations/${id}/unpost`, {
+    method: 'POST',
+  })
+}
+
+// ── Reports ───────────────────────────────────────────────────────────────
+
+export function getCostCard(objectId: number, period?: string | null) {
+  const params = new URLSearchParams()
+  params.set('object_id', String(objectId))
+  if (period) params.set('period', period)
+  return apiRequest<ApiResponse<CostCardResponse>>(`/api/cost/reports/cost-card?${params}`)
+}
+
+export function getCostTurnover(period: string, objectId: number = 0) {
+  return apiRequest<ApiResponse<TurnoverReportResponse>>(
+    `/api/cost/reports/cost-turnover?period=${period}&object_id=${objectId}`,
+  )
+}
+
+export function getCostDeviations(period: string, threshold: number = 0, objectId: number = 0) {
+  return apiRequest<ApiResponse<DeviationsReportResponse>>(
+    `/api/cost/reports/cost-deviations?period=${period}&threshold=${threshold}&object_id=${objectId}`,
+  )
+}
+
+export function getCostProfitability(period?: string | null) {
+  const params = new URLSearchParams()
+  if (period) params.set('period', period)
+  const qs = params.toString()
+  return apiRequest<ApiResponse<ProfitabilityReportResponse>>(
+    `/api/cost/reports/cost-profitability${qs ? `?${qs}` : ''}`,
+  )
+}
+
+// ── Limit Check ───────────────────────────────────────────────────────────
+// Note: limit check uses data from CostItemMaterial, returned directly from
+// the report endpoints. For now, client-side limit validation is optional.

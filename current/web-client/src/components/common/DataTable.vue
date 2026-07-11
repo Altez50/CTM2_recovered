@@ -1,0 +1,224 @@
+<template>
+  <div class="table-shell">
+    <div v-if="loading" class="empty-state">Загрузка данных…</div>
+    <template v-else-if="rows.length">
+      <div class="desktop-table">
+        <table>
+          <thead>
+            <tr>
+              <th v-for="column in columns" :key="column.key">{{ column.label }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(row, index) in rows"
+              :key="getRowKey(row)"
+              :class="{ 'row-selected': selectable && isSelected(row) }"
+              :style="selectable ? 'cursor: pointer' : undefined"
+              @click="handleRowClick($event, row, index)"
+              @dblclick="handleRowDblClick($event, row)"
+            >
+              <td v-for="column in columns" :key="column.key">
+                <slot :name="`cell-${column.key}`" :row="row">
+                  {{ row[column.key] }}
+                </slot>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mobile-cards">
+        <article
+          v-for="(row, index) in rows"
+          :key="getRowKey(row)"
+          class="panel mobile-card"
+          :class="{ 'row-selected': selectable && isSelected(row) }"
+          @click="handleRowClick($event, row, index)"
+          @dblclick="handleRowDblClick($event, row)"
+        >
+          <div v-for="column in columns" :key="column.key" class="card-row">
+            <span class="card-label">{{ column.label }}</span>
+            <div class="card-value">
+              <slot :name="`cell-${column.key}`" :row="row">
+                {{ row[column.key] }}
+              </slot>
+            </div>
+          </div>
+        </article>
+      </div>
+    </template>
+    <div v-else class="empty-state">{{ emptyText }}</div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+
+interface Column {
+  key: string
+  label: string
+}
+
+const props = withDefaults(
+  defineProps<{
+    columns: Column[]
+    rows: any[]
+    loading?: boolean
+    emptyText?: string
+    rowKey?: string
+    selectable?: boolean
+    selectedIds?: string[]
+  }>(),
+  {
+    loading: false,
+    emptyText: 'Записей пока нет',
+    rowKey: 'id',
+    selectable: false,
+    selectedIds: () => [],
+  },
+)
+
+const emit = defineEmits<{
+  'update:selectedIds': [ids: string[]]
+  'row-dblclick': [row: Record<string, unknown>]
+}>()
+
+const lastClickedIndex = ref<number | null>(null)
+
+function getRowKey(row: Record<string, unknown>) {
+  return String(row[props.rowKey] ?? Math.random())
+}
+
+function isSelected(row: Record<string, unknown>) {
+  return props.selectedIds.includes(getRowKey(row))
+}
+
+function isInteractiveElement(target: HTMLElement): boolean {
+  return target.closest('a, button, input, select, label, [role="button"]') !== null
+}
+
+function handleRowClick(event: MouseEvent, row: Record<string, unknown>, index: number) {
+  if (!props.selectable) return
+  if (isInteractiveElement(event.target as HTMLElement)) return
+
+  const rowId = getRowKey(row)
+
+  if (event.ctrlKey || event.metaKey) {
+    // Ctrl+click: toggle selection of this row
+    const newIds = [...props.selectedIds]
+    const idx = newIds.indexOf(rowId)
+    if (idx >= 0) {
+      newIds.splice(idx, 1)
+    } else {
+      newIds.push(rowId)
+    }
+    emit('update:selectedIds', newIds)
+    lastClickedIndex.value = index
+  } else if (event.shiftKey && lastClickedIndex.value !== null) {
+    // Shift+click: extend selection from last clicked to current
+    const start = Math.min(lastClickedIndex.value, index)
+    const end = Math.max(lastClickedIndex.value, index)
+    const rangeIds = new Set(props.selectedIds)
+    for (let i = start; i <= end; i++) {
+      rangeIds.add(getRowKey(props.rows[i]))
+    }
+    emit('update:selectedIds', [...rangeIds])
+  } else {
+    // Plain click: select only this row
+    emit('update:selectedIds', [rowId])
+    lastClickedIndex.value = index
+  }
+}
+
+function handleRowDblClick(event: MouseEvent, row: Record<string, unknown>) {
+  if (!props.selectable) return
+  if (isInteractiveElement(event.target as HTMLElement)) return
+  emit('row-dblclick', row)
+}
+</script>
+
+<style scoped>
+.table-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.desktop-table {
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.9rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+th {
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+tr.row-selected {
+  background: rgba(178, 76, 45, 0.09);
+}
+
+tr.row-selected:hover {
+  background: rgba(178, 76, 45, 0.15);
+}
+
+.empty-state {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-soft);
+}
+
+.mobile-cards {
+  display: none;
+  gap: 0.85rem;
+}
+
+.mobile-card {
+  padding: 1rem;
+}
+
+.mobile-card.row-selected {
+  border-color: rgba(178, 76, 45, 0.32);
+  background: rgba(178, 76, 45, 0.06);
+  box-shadow: 0 0 0 1px rgba(178, 76, 45, 0.18);
+}
+
+.card-row {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.4rem 0;
+}
+
+.card-label {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.card-value {
+  font-weight: 600;
+}
+
+@media (max-width: 767px) {
+  .desktop-table {
+    display: none;
+  }
+
+  .mobile-cards {
+    display: grid;
+  }
+}
+</style>

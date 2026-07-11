@@ -1,0 +1,30 @@
+http://:80 {
+    encode gzip zstd
+
+    redir / /ctm/ 302
+    redir /ctm /ctm/ 301
+    redir /api /api/ 301
+
+    reverse_proxy /ctm/* frontend:80
+    reverse_proxy /api/* api:8000
+    reverse_proxy /docs api:8000
+    reverse_proxy /docs/oauth2-redirect api:8000
+    reverse_proxy /redoc api:8000
+    reverse_proxy /openapi.json api:8000
+}
+
+https://:443 {
+    tls {$TLS_CERT_FILE} {$TLS_KEY_FILE}
+    encode gzip zstd
+
+    redir / /ctm/ 302
+    redir /ctm /ctm/ 301
+    redir /api /api/ 301
+
+    reverse_proxy /ctm/* frontend:80
+    reverse_proxy /api/* api:8000
+    reverse_proxy /docs api:8000
+    reverse_proxy /docs/oauth2-redirect api:8000
+    reverse_proxy /redoc api:8000
+    reverse_proxy /openapi.json api:8000
+}

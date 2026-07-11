@@ -1,0 +1,46 @@
+version: '2.1'
+
+services:
+  api:
+    build:
+      context: /srv/ctm/current
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .deploy.kassir.env
+    environment:
+      DATABASE_PATH: /app/construction-ctm2.db
+      DATABASE_CONFIG_PATH: /app/env.ini
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      CORS_ORIGINS: http://abitek.su:18080,https://abitek.su:18443,https://abitek.su:10443
+    volumes:
+      - /srv/ctm/data/construction-ctm2.db:/app/construction-ctm2.db
+
+  frontend:
+    build:
+      context: /srv/ctm/current/web-client
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  reverse-proxy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    env_file:
+      - .deploy.kassir.env
+    depends_on:
+      - frontend
+      - api
+    volumes:
+      - /srv/ctm/current/reverse-proxy/Caddyfile.kassir:/etc/caddy/Caddyfile:ro
+      - /srv/ctm/certs:/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "192.168.0.39:8080:80"
+      - "192.168.0.39:8443:443"
+
+volumes:
+  caddy_data:
+  caddy_config:

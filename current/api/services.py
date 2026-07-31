@@ -684,6 +684,35 @@ def delete_estimate(connection: sqlite3.Connection, estimate_id: int) -> None:
     connection.commit()
 
 
+def restore_estimate(connection: sqlite3.Connection, estimate_id: int) -> None:
+    estimate = get_estimate(connection, estimate_id)
+    now = _now_iso()
+    connection.execute(
+        """
+        UPDATE estimates
+        SET marked_for_deletion = 0,
+            is_deleted = 0,
+            modified_at = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (now, now, estimate_id),
+    )
+    connection.execute(
+        """
+        UPDATE estimate_lines
+        SET marked_for_deletion = 0,
+            is_deleted = 0,
+            modified_at = ?,
+            updated_at = ?
+        WHERE estimate_id = ?
+        """,
+        (now, now, estimate_id),
+    )
+    register_sync_change(connection, entity_type="estimates", entity_uuid=str(estimate["uuid"]), operation="RESTORE")
+    connection.commit()
+
+
 def _require_admin(user: UserInfo) -> None:
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Only administrators can post documents")
@@ -1169,6 +1198,35 @@ def delete_daily_report(connection: sqlite3.Connection, report_id: int, user: Us
         (now, now, report_id),
     )
     register_sync_change(connection, entity_type="daily_reports", entity_uuid=str(report["uuid"]), operation="DELETE")
+    connection.commit()
+
+
+def restore_daily_report(connection: sqlite3.Connection, report_id: int, user: UserInfo) -> None:
+    report = get_daily_report(connection, report_id, user)
+    now = _now_iso()
+    connection.execute(
+        """
+        UPDATE daily_reports
+        SET marked_for_deletion = 0,
+            is_deleted = 0,
+            modified_at = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (now, now, report_id),
+    )
+    connection.execute(
+        """
+        UPDATE daily_report_lines
+        SET marked_for_deletion = 0,
+            is_deleted = 0,
+            modified_at = ?,
+            updated_at = ?
+        WHERE report_id = ?
+        """,
+        (now, now, report_id),
+    )
+    register_sync_change(connection, entity_type="daily_reports", entity_uuid=str(report["uuid"]), operation="RESTORE")
     connection.commit()
 
 

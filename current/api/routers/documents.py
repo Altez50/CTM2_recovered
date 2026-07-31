@@ -43,6 +43,8 @@ from api.services import (
     post_estimate,
     post_timesheet,
     preview_timesheet_import,
+    restore_daily_report,
+    restore_estimate,
     save_daily_report,
     save_estimate,
     save_timesheet,
@@ -117,6 +119,16 @@ def delete_estimate_document(
 ) -> ApiMessage:
     delete_estimate(connection, estimate_id)
     return ApiMessage(message="Estimate marked for deletion")
+
+
+@router.post("/estimates/{estimate_id}/restore", response_model=ApiMessage)
+def restore_estimate_document(
+    estimate_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+) -> ApiMessage:
+    restore_estimate(connection, estimate_id)
+    return ApiMessage(message="Estimate restored")
 
 
 @router.post("/estimates/{estimate_id}/post", response_model=ApiMessage)
@@ -235,6 +247,16 @@ def delete_daily_report_document(
 ) -> ApiMessage:
     delete_daily_report(connection, report_id, current_user)
     return ApiMessage(message="Daily report marked for deletion")
+
+
+@router.post("/daily-reports/{report_id}/restore", response_model=ApiMessage)
+def restore_daily_report_document(
+    report_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+) -> ApiMessage:
+    restore_daily_report(connection, report_id, current_user)
+    return ApiMessage(message="Daily report restored")
 
 
 @router.post("/daily-reports/{report_id}/post", response_model=ApiMessage)

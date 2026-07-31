@@ -25,7 +25,7 @@
           <button class="button button-danger" type="button" title="Удалить" @click="removeSelected">✕</button>
         </SelectionActionBar>
 
-        <DataTable :columns="columns" :rows="rows as any[]" :loading="loading" empty-text="Документов пока нет" selectable :selected-ids="selectedIds" @update:selected-ids="selectedIds = $event" @row-dblclick="handleRowDblClick">
+        <DataTable :columns="columns" :rows="rows as any[]" :loading="loading" empty-text="Документов пока нет" selectable :selected-ids="selectedIds" @update:selected-ids="selectedIds = $event" @row-dblclick="handleRowDblClick" @row-contextmenu="onContextMenu as any">
           <template #cell-number="{ row }"><RouterLink class="document-list-link" :to="`/documents/overhead-expenses/${row.id}`"><strong>{{ row.number }}</strong></RouterLink></template>
           <template #cell-date="{ row }">{{ formatDate(row.date) }}</template>
           <template #cell-is_distributed="{ row }"><span :class="['status-pill', row.is_distributed ? 'posted' : 'draft']">{{ row.is_distributed ? 'Распределены' : 'Не распределены' }}</span></template>
@@ -37,6 +37,7 @@
         </div>
       </div>
     </section>
+    <ContextMenu :open="menuOpen" :items="menuItems" :x="menuX" :y="menuY" @close="closeMenu" @select="onMenuSelect" />
   </div>
 </template>
 
@@ -48,8 +49,10 @@ import SelectionActionBar from '../../components/common/SelectionActionBar.vue'
 import { useAuthStore } from '../../stores/auth'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import type { HeaderAction } from '../../stores/headerBar'
+import ContextMenu from '../../components/common/ContextMenu.vue'
+import { useDocumentContextMenu } from '../../composables/useDocumentContextMenu'
 import type { OverheadExpense, AllocationBase } from '../../types/costAccounting'
-import { listOverheadExpenses, deleteOverheadExpense, listAllocationBases, distributeOverhead, cancelOverheadDistribution } from '../../api/costAccounting'
+import { listOverheadExpenses, deleteOverheadExpense, restoreOverheadExpense, listAllocationBases, distributeOverhead, cancelOverheadDistribution } from '../../api/costAccounting'
 
 const props = defineProps<{ tabId?: string }>()
 const auth = useAuthStore(); const router = useRouter()
@@ -65,6 +68,12 @@ const allocationBases = ref<AllocationBase[]>([])
 const distPeriod = ref(new Date().toISOString().slice(0, 7))
 const distBaseId = ref(0)
 const distributing = ref(false)
+
+const { menuOpen, menuX, menuY, menuItems, onContextMenu, closeMenu, onMenuSelect } = useDocumentContextMenu<OverheadExpense>({
+  hasPost: false,
+  onDelete: async (row) => { await deleteOverheadExpense(Number(row.id)); await loadItems() },
+  onRestore: async (row) => { await restoreOverheadExpense(Number(row.id)); await loadItems() },
+})
 
 function formatDate(v: any) { if (!v) return '—'; const [y,m,d] = String(v).split('-').map(Number); return y && m && d ? new Date(y,m-1,d).toLocaleDateString('ru-RU') : v }
 function openItem(id: number) { router.push(`/documents/overhead-expenses/${id}`) }

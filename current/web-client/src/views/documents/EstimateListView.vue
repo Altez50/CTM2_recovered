@@ -84,6 +84,7 @@
           :selected-ids="selectedIds"
           @update:selected-ids="selectedIds = $event"
           @row-dblclick="handleRowDblClick"
+          @row-contextmenu="onContextMenu as any"
         >
           <template #cell-number="{ row }">
             <RouterLink class="document-list-link" :to="`/documents/estimates/${(row as unknown as Estimate).id}`">
@@ -124,6 +125,7 @@
       @close="printState = null"
       @select="runPrint"
     />
+    <ContextMenu :open="menuOpen" :items="menuItems" :x="menuX" :y="menuY" @close="closeMenu" @select="onMenuSelect" />
   </div>
 </template>
 
@@ -132,11 +134,13 @@ import { computed, onMounted, ref, watch } from 'vue'
 import DataTable from '../../components/common/DataTable.vue'
 import PrintFormatDialog from '../../components/common/PrintFormatDialog.vue'
 import SelectionActionBar from '../../components/common/SelectionActionBar.vue'
-import { deleteEstimate, copyEstimate, listEstimates, postEstimate, printAct, printEstimate, unpostEstimate } from '../../api/documents'
+import { deleteEstimate, copyEstimate, listEstimates, postEstimate, printAct, printEstimate, restoreEstimate, unpostEstimate } from '../../api/documents'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import type { HeaderAction } from '../../stores/headerBar'
+import ContextMenu from '../../components/common/ContextMenu.vue'
+import { useDocumentContextMenu } from '../../composables/useDocumentContextMenu'
 import type { Estimate } from '../../types/models'
 
 const props = defineProps<{ tabId?: string }>()
@@ -179,6 +183,13 @@ const canUnpostSelected = computed(() => {
     const row = rows.value.find((r) => String(r.id) === id)
     return row && row.is_posted
   })
+})
+
+const { menuOpen, menuX, menuY, menuItems, onContextMenu, closeMenu, onMenuSelect } = useDocumentContextMenu<Estimate>({
+  onPost: async (row) => { await postEstimate(Number(row.id)); await loadItems() },
+  onUnpost: async (row) => { await unpostEstimate(Number(row.id)); await loadItems() },
+  onDelete: async (row) => { await deleteEstimate(Number(row.id)); await loadItems() },
+  onRestore: async (row) => { await restoreEstimate(Number(row.id)); await loadItems() },
 })
 
 function formatNumber(value: number) {

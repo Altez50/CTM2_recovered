@@ -76,6 +76,7 @@
           :selected-ids="selectedIds"
           @update:selected-ids="selectedIds = $event"
           @row-dblclick="handleRowDblClick"
+          @row-contextmenu="onContextMenu as any"
         >
           <template #cell-number="{ row }">
             <RouterLink class="document-list-link" :to="`/documents/daily-reports/${(row as unknown as DailyReport).id}`">
@@ -113,6 +114,7 @@
       @close="printId = null"
       @select="runPrint"
     />
+    <ContextMenu :open="menuOpen" :items="menuItems" :x="menuX" :y="menuY" @close="closeMenu" @select="onMenuSelect" />
   </div>
 </template>
 
@@ -127,12 +129,15 @@ import {
   listDailyReports,
   postDailyReport,
   printDailyReport,
+  restoreDailyReport,
   unpostDailyReport,
 } from '../../api/documents'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import type { HeaderAction } from '../../stores/headerBar'
+import ContextMenu from '../../components/common/ContextMenu.vue'
+import { useDocumentContextMenu } from '../../composables/useDocumentContextMenu'
 import type { DailyReport } from '../../types/models'
 
 const props = defineProps<{ tabId?: string }>()
@@ -174,6 +179,13 @@ const canUnpostSelected = computed(() => {
     const row = rows.value.find((r) => String(r.id) === id)
     return row && row.is_posted
   })
+})
+
+const { menuOpen, menuX, menuY, menuItems, onContextMenu, closeMenu, onMenuSelect } = useDocumentContextMenu<DailyReport>({
+  onPost: async (row) => { await postDailyReport(Number(row.id)); await loadItems() },
+  onUnpost: async (row) => { await unpostDailyReport(Number(row.id)); await loadItems() },
+  onDelete: async (row) => { await deleteDailyReport(Number(row.id)); await loadItems() },
+  onRestore: async (row) => { await restoreDailyReport(Number(row.id)); await loadItems() },
 })
 
 function formatDate(value: string | null | undefined) {

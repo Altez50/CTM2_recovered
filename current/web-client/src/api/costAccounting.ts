@@ -110,6 +110,12 @@ export function deleteMaterialConsumption(id: number) {
   })
 }
 
+export function restoreMaterialConsumption(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/material-consumptions/${id}/restore`, {
+    method: 'POST',
+  })
+}
+
 export function postMaterialConsumption(id: number) {
   return apiRequest<ApiResponse<unknown>>(`/api/cost/material-consumptions/${id}/post`, {
     method: 'POST',
@@ -151,6 +157,12 @@ export function updateMachineryUsageReport(id: number, payload: MachineryUsageRe
 export function deleteMachineryUsageReport(id: number) {
   return apiRequest<ApiResponse<unknown>>(`/api/cost/machinery-usage-reports/${id}`, {
     method: 'DELETE',
+  })
+}
+
+export function restoreMachineryUsageReport(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/machinery-usage-reports/${id}/restore`, {
+    method: 'POST',
   })
 }
 
@@ -198,6 +210,12 @@ export function deleteSubcontractAcceptance(id: number) {
   })
 }
 
+export function restoreSubcontractAcceptance(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/subcontract-acceptances/${id}/restore`, {
+    method: 'POST',
+  })
+}
+
 export function postSubcontractAcceptance(id: number) {
   return apiRequest<ApiResponse<unknown>>(`/api/cost/subcontract-acceptances/${id}/post`, {
     method: 'POST',
@@ -239,6 +257,12 @@ export function updateOverheadExpense(id: number, payload: OverheadExpense) {
 export function deleteOverheadExpense(id: number) {
   return apiRequest<ApiResponse<unknown>>(`/api/cost/overhead-expenses/${id}`, {
     method: 'DELETE',
+  })
+}
+
+export function restoreOverheadExpense(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/overhead-expenses/${id}/restore`, {
+    method: 'POST',
   })
 }
 

@@ -16,7 +16,7 @@
           <button class="button button-danger" type="button" title="Удалить" @click="removeSelected">✕</button>
         </SelectionActionBar>
 
-        <DataTable :columns="columns" :rows="rows as Record<string, unknown>[]" :loading="loading" empty-text="Документов пока нет" selectable :selected-ids="selectedIds" @update:selected-ids="selectedIds = $event" @row-dblclick="handleRowDblClick">
+        <DataTable :columns="columns" :rows="rows as Record<string, unknown>[]" :loading="loading" empty-text="Документов пока нет" selectable :selected-ids="selectedIds" @update:selected-ids="selectedIds = $event" @row-dblclick="handleRowDblClick" @row-contextmenu="onContextMenu as any">
           <template #cell-number="{ row }">
             <RouterLink class="document-list-link" :to="`/documents/material-consumptions/${(row as unknown as MaterialConsumption).id}`">
               <strong>{{ (row as unknown as MaterialConsumption).number }}</strong>
@@ -37,6 +37,7 @@
         </div>
       </div>
     </section>
+    <ContextMenu :open="menuOpen" :items="menuItems" :x="menuX" :y="menuY" @close="closeMenu" @select="onMenuSelect" />
   </div>
 </template>
 
@@ -48,8 +49,10 @@ import SelectionActionBar from '../../components/common/SelectionActionBar.vue'
 import { useAuthStore } from '../../stores/auth'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import type { HeaderAction } from '../../stores/headerBar'
+import ContextMenu, { type ContextMenuItem } from '../../components/common/ContextMenu.vue'
+import { useDocumentContextMenu } from '../../composables/useDocumentContextMenu'
 import type { MaterialConsumption } from '../../types/costAccounting'
-import { deleteMaterialConsumption, listMaterialConsumptions, postMaterialConsumption, unpostMaterialConsumption } from '../../api/costAccounting'
+import { deleteMaterialConsumption, listMaterialConsumptions, postMaterialConsumption, restoreMaterialConsumption, unpostMaterialConsumption } from '../../api/costAccounting'
 
 const props = defineProps<{ tabId?: string }>()
 const auth = useAuthStore(); const router = useRouter()
@@ -66,6 +69,13 @@ const columns = [
 
 const canPostSelected = computed(() => selectedIds.value.length > 0 && selectedIds.value.every((id) => { const row = rows.value.find((r) => String(r.id) === id); return row && !row.is_posted }))
 const canUnpostSelected = computed(() => selectedIds.value.length > 0 && selectedIds.value.every((id) => { const row = rows.value.find((r) => String(r.id) === id); return row && row.is_posted }))
+
+const { menuOpen, menuX, menuY, menuItems, onContextMenu, closeMenu, onMenuSelect } = useDocumentContextMenu<MaterialConsumption>({
+  onPost: async (row) => { await postMaterialConsumption(Number(row.id)); await loadItems() },
+  onUnpost: async (row) => { await unpostMaterialConsumption(Number(row.id)); await loadItems() },
+  onDelete: async (row) => { await deleteMaterialConsumption(Number(row.id)); await loadItems() },
+  onRestore: async (row) => { await restoreMaterialConsumption(Number(row.id)); await loadItems() },
+})
 
 function formatDate(v: string | null | undefined) { if (!v) return '—'; const [y,m,d] = v.split('-').map(Number); return y && m && d ? new Date(y,m-1,d).toLocaleDateString('ru-RU') : v }
 function openItem(id: number) { router.push(`/documents/material-consumptions/${id}`) }

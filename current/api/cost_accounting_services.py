@@ -299,6 +299,16 @@ def delete_material_consumption(
     connection.commit()
 
 
+def restore_material_consumption(
+    connection: sqlite3.Connection, doc_id: int
+) -> None:
+    connection.execute(
+        "UPDATE material_consumptions SET marked_for_deletion = 0 WHERE id = ?",
+        (doc_id,),
+    )
+    connection.commit()
+
+
 def post_material_consumption(
     connection: sqlite3.Connection, doc_id: int
 ) -> None:
@@ -485,6 +495,16 @@ def delete_machinery_usage_report(
 ) -> None:
     connection.execute(
         "UPDATE machinery_usage_reports SET marked_for_deletion = 1 WHERE id = ?",
+        (doc_id,),
+    )
+    connection.commit()
+
+
+def restore_machinery_usage_report(
+    connection: sqlite3.Connection, doc_id: int
+) -> None:
+    connection.execute(
+        "UPDATE machinery_usage_reports SET marked_for_deletion = 0 WHERE id = ?",
         (doc_id,),
     )
     connection.commit()
@@ -696,6 +716,16 @@ def delete_subcontract_acceptance(
     connection.commit()
 
 
+def restore_subcontract_acceptance(
+    connection: sqlite3.Connection, doc_id: int
+) -> None:
+    connection.execute(
+        "UPDATE subcontract_acceptances SET marked_for_deletion = 0 WHERE id = ?",
+        (doc_id,),
+    )
+    connection.commit()
+
+
 def post_subcontract_acceptance(
     connection: sqlite3.Connection, doc_id: int
 ) -> None:
@@ -870,6 +900,16 @@ def delete_overhead_expense(
 ) -> None:
     connection.execute(
         "UPDATE overhead_expenses SET marked_for_deletion = 1 WHERE id = ?",
+        (doc_id,),
+    )
+    connection.commit()
+
+
+def restore_overhead_expense(
+    connection: sqlite3.Connection, doc_id: int
+) -> None:
+    connection.execute(
+        "UPDATE overhead_expenses SET marked_for_deletion = 0 WHERE id = ?",
         (doc_id,),
     )
     connection.commit()

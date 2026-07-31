@@ -17,6 +17,7 @@
               :style="selectable ? 'cursor: pointer' : undefined"
               @click="handleRowClick($event, row, index)"
               @dblclick="handleRowDblClick($event, row)"
+              @contextmenu.prevent="handleRowContextMenu($event, row)"
             >
               <td v-for="column in columns" :key="column.key">
                 <slot :name="`cell-${column.key}`" :row="row">
@@ -36,6 +37,7 @@
           :class="{ 'row-selected': selectable && isSelected(row) }"
           @click="handleRowClick($event, row, index)"
           @dblclick="handleRowDblClick($event, row)"
+          @contextmenu.prevent="handleRowContextMenu($event, row)"
         >
           <div v-for="column in columns" :key="column.key" class="card-row">
             <span class="card-label">{{ column.label }}</span>
@@ -82,6 +84,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   'update:selectedIds': [ids: string[]]
   'row-dblclick': [row: Record<string, unknown>]
+  'row-contextmenu': [row: Record<string, unknown>, event: MouseEvent]
 }>()
 
 const lastClickedIndex = ref<number | null>(null)
@@ -135,6 +138,10 @@ function handleRowDblClick(event: MouseEvent, row: Record<string, unknown>) {
   if (!props.selectable) return
   if (isInteractiveElement(event.target as HTMLElement)) return
   emit('row-dblclick', row)
+}
+
+function handleRowContextMenu(event: MouseEvent, row: Record<string, unknown>) {
+  emit('row-contextmenu', row, event)
 }
 </script>
 

@@ -16,7 +16,7 @@
           <button class="button button-danger" type="button" title="Удалить" @click="removeSelected">✕</button>
         </SelectionActionBar>
 
-        <DataTable :columns="columns" :rows="rows as any[]" :loading="loading" empty-text="Рапортов пока нет" selectable :selected-ids="selectedIds" @update:selected-ids="selectedIds = $event" @row-dblclick="handleRowDblClick">
+        <DataTable :columns="columns" :rows="rows as any[]" :loading="loading" empty-text="Рапортов пока нет" selectable :selected-ids="selectedIds" @update:selected-ids="selectedIds = $event" @row-dblclick="handleRowDblClick" @row-contextmenu="onContextMenu as any">
           <template #cell-number="{ row }"><RouterLink class="document-list-link" :to="`/documents/machinery-usage/${row.id}`"><strong>{{ row.number }}</strong></RouterLink></template>
           <template #cell-date="{ row }">{{ formatDate(row.date) }}</template>
           <template #cell-is_posted="{ row }"><span :class="['status-pill', row.is_posted ? 'posted' : 'draft']">{{ row.is_posted ? 'Проведен' : 'Черновик' }}</span></template>
@@ -28,6 +28,7 @@
         </div>
       </div>
     </section>
+    <ContextMenu :open="menuOpen" :items="menuItems" :x="menuX" :y="menuY" @close="closeMenu" @select="onMenuSelect" />
   </div>
 </template>
 
@@ -39,8 +40,10 @@ import SelectionActionBar from '../../components/common/SelectionActionBar.vue'
 import { useAuthStore } from '../../stores/auth'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import type { HeaderAction } from '../../stores/headerBar'
+import ContextMenu from '../../components/common/ContextMenu.vue'
+import { useDocumentContextMenu } from '../../composables/useDocumentContextMenu'
 import type { MachineryUsageReport } from '../../types/costAccounting'
-import { listMachineryUsageReports, deleteMachineryUsageReport, postMachineryUsageReport, unpostMachineryUsageReport } from '../../api/costAccounting'
+import { listMachineryUsageReports, deleteMachineryUsageReport, postMachineryUsageReport, restoreMachineryUsageReport, unpostMachineryUsageReport } from '../../api/costAccounting'
 
 const props = defineProps<{ tabId?: string }>()
 const auth = useAuthStore(); const router = useRouter()
@@ -54,6 +57,13 @@ const columns = [{ key: 'number', label: 'Номер' }, { key: 'date', label: '
 
 const canPostSelected = computed(() => selectedIds.value.length > 0 && selectedIds.value.every((id) => { const row = rows.value.find((r) => String(r.id) === id); return row && !row.is_posted }))
 const canUnpostSelected = computed(() => selectedIds.value.length > 0 && selectedIds.value.every((id) => { const row = rows.value.find((r) => String(r.id) === id); return row && row.is_posted }))
+
+const { menuOpen, menuX, menuY, menuItems, onContextMenu, closeMenu, onMenuSelect } = useDocumentContextMenu<MachineryUsageReport>({
+  onPost: async (row) => { await postMachineryUsageReport(Number(row.id)); await loadItems() },
+  onUnpost: async (row) => { await unpostMachineryUsageReport(Number(row.id)); await loadItems() },
+  onDelete: async (row) => { await deleteMachineryUsageReport(Number(row.id)); await loadItems() },
+  onRestore: async (row) => { await restoreMachineryUsageReport(Number(row.id)); await loadItems() },
+})
 
 function formatDate(v: any) { if (!v) return '—'; const [y,m,d] = String(v).split('-').map(Number); return y && m && d ? new Date(y,m-1,d).toLocaleDateString('ru-RU') : v }
 function openItem(id: number) { router.push(`/documents/machinery-usage/${id}`) }

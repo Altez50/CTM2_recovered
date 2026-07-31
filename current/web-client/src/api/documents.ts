@@ -50,6 +50,10 @@ export function deleteEstimate(id: number) {
   })
 }
 
+export function restoreEstimate(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/documents/estimates/${id}/restore`, { method: 'POST' })
+}
+
 export function postEstimate(id: number) {
   return apiRequest<ApiResponse<unknown>>(`/api/documents/estimates/${id}/post`, { method: 'POST' })
 }
@@ -132,6 +136,10 @@ export function deleteDailyReport(id: number) {
   return apiRequest<ApiResponse<unknown>>(`/api/documents/daily-reports/${id}`, {
     method: 'DELETE',
   })
+}
+
+export function restoreDailyReport(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/documents/daily-reports/${id}/restore`, { method: 'POST' })
 }
 
 export function postDailyReport(id: number) {

@@ -45,6 +45,7 @@ import threading
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
+import webbrowser
 from tkinter import messagebox, scrolledtext
 
 try:
@@ -70,6 +71,8 @@ WEBCLIENT_DIR = CURRENT_DIR / "web-client"
 
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = "8000"
+FRONTEND_URL = "http://localhost:5173/ctm/"
+PROD_URL = "https://abitek.su:18443/ctm/"
 MAX_LOG_LINES = 2000
 
 CLR_OFF = "#95a5a6"
@@ -142,6 +145,9 @@ class RunnerApp:
         self.font = tkfont.Font(family="Segoe UI", size=10)
         self.font_b = tkfont.Font(family="Segoe UI", size=10, weight="bold")
         self.font_sm = tkfont.Font(family="Segoe UI", size=9)
+        self.font_link = tkfont.Font(
+            family="Segoe UI", size=9, underline=True,
+        )
 
         top = tk.Frame(self.root, padx=14, pady=10)
         top.pack(side=tk.TOP, fill=tk.X)
@@ -158,9 +164,10 @@ class RunnerApp:
         self.srv_status = tk.Label(srv_row, text="Stopped", anchor="w", width=14)
         self.srv_status.config(font=self.font)
         self.srv_status.pack(side=tk.LEFT, padx=(6, 0))
-        self.srv_url = tk.Label(srv_row, text=f"http://{SERVER_HOST}:{SERVER_PORT}",
-                                anchor="w", fg="#7f8c8d")
-        self.srv_url.config(font=self.font_sm)
+        self.srv_url = self._make_link(
+            srv_row, f"http://{SERVER_HOST}:{SERVER_PORT}",
+            f"http://{SERVER_HOST}:{SERVER_PORT}",
+        )
         self.srv_url.pack(side=tk.LEFT, padx=(8, 0))
         self.srv_btn = tk.Button(
             srv_row, text="Start Server", width=14, command=self.toggle_server,
@@ -186,6 +193,17 @@ class RunnerApp:
             fe_row, text="Start Frontend", width=14, command=self.toggle_frontend,
         )
         self.fe_btn.pack(side=tk.RIGHT)
+
+        fe_links = tk.Frame(fe_frame)
+        fe_links.pack(fill=tk.X, pady=(4, 0))
+        self.dev_link = self._make_link(
+            fe_links, "Open dev frontend: " + FRONTEND_URL, FRONTEND_URL,
+        )
+        self.dev_link.pack(side=tk.LEFT, padx=(16, 12))
+        self.prod_link = self._make_link(
+            fe_links, "Open prod: " + PROD_URL, PROD_URL,
+        )
+        self.prod_link.pack(side=tk.LEFT)
 
         # --- Rebuild + Deploy ---
         aux_row = tk.Frame(top)
@@ -214,6 +232,12 @@ class RunnerApp:
         clr.pack(side=tk.RIGHT, padx=14, pady=(0, 8))
 
     # ---- process spawning ---------------------------------------------------
+    def _make_link(self, parent, text: str, url: str) -> tk.Label:
+        lbl = tk.Label(parent, text=text, fg="#2c6fbb", cursor="hand2")
+        lbl.config(font=self.font_link)
+        lbl.bind("<Button-1>", lambda e: webbrowser.open(url))
+        return lbl
+
     def _spawn(self, cwd: Path, args: list[str],
                tag: str, on_exit=None) -> subprocess.Popen | None:
         try:
@@ -415,6 +439,9 @@ class RunnerApp:
             pystray.MenuItem("Rebuild frontend", self._tray_rebuild),
             pystray.MenuItem("Deploy to prod (stub)", self._tray_deploy),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Open dev frontend", self._tray_open_dev),
+            pystray.MenuItem("Open prod frontend", self._tray_open_prod),
+            pystray.Menu.SEPARATOR,
             pystray.MenuItem("Exit", self._tray_exit),
         )
 
@@ -432,6 +459,12 @@ class RunnerApp:
 
     def _tray_deploy(self, icon=None, item=None):
         self.root.after(0, self.deploy)
+
+    def _tray_open_dev(self, icon=None, item=None):
+        webbrowser.open(FRONTEND_URL)
+
+    def _tray_open_prod(self, icon=None, item=None):
+        webbrowser.open(PROD_URL)
 
     def _tray_exit(self, icon=None, item=None):
         self.root.after(0, self._quit)

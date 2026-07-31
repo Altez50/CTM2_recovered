@@ -42,6 +42,10 @@ from api.cost_accounting_services import (
     post_machinery_usage_report,
     post_material_consumption,
     post_subcontract_acceptance,
+    restore_material_consumption,
+    restore_machinery_usage_report,
+    restore_subcontract_acceptance,
+    restore_overhead_expense,
     save_cost_calculation,
     save_machine,
     save_machinery_usage_report,
@@ -208,6 +212,16 @@ def delete_mc_document(
 ) -> ApiMessage:
     delete_material_consumption(connection, doc_id)
     return ApiMessage(message="Material consumption marked for deletion")
+
+
+@router.post("/material-consumptions/{doc_id}/restore", response_model=ApiMessage)
+def restore_mc_document(
+    doc_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+) -> ApiMessage:
+    restore_material_consumption(connection, doc_id)
+    return ApiMessage(message="Material consumption restored")
 
 
 @router.post("/material-consumptions/{doc_id}/post", response_model=ApiMessage)
@@ -454,6 +468,16 @@ def delete_oe_document(
 ) -> ApiMessage:
     delete_overhead_expense(connection, doc_id)
     return ApiMessage(message="Overhead expense marked for deletion")
+
+
+@router.post("/overhead-expenses/{doc_id}/restore", response_model=ApiMessage)
+def restore_oe_document(
+    doc_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+) -> ApiMessage:
+    restore_overhead_expense(connection, doc_id)
+    return ApiMessage(message="Overhead expense restored")
 
 
 # ── Overhead Distribution ─────────────────────────────────────────────────

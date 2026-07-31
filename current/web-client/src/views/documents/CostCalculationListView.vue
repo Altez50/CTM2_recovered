@@ -11,9 +11,9 @@
 
         <SelectionActionBar :selected-count="selectedIds.length" @deselect-all="selectedIds = []">
           <button v-if="selectedIds.length === 1" class="button button-secondary" type="button" @click="openItem(Number(selectedIds[0]))">Открыть</button>
-          <button v-if="canCalculateSelected" class="button button-secondary" type="button" @click="runCalculateSelected">Рассчитать</button>
-          <button v-if="auth.isAdmin && canPostSelected" class="button button-secondary" type="button" title="Провести" @click="runPostSelected">✓</button>
-          <button v-if="auth.isAdmin && canUnpostSelected" class="button button-secondary" type="button" title="Отменить проведение" @click="runUnpostSelected">↺</button>
+          <button v-if="auth.canManageCost && canCalculateSelected" class="button button-secondary" type="button" @click="runCalculateSelected">Рассчитать</button>
+          <button v-if="auth.canManageCost && canPostSelected" class="button button-secondary" type="button" title="Провести" @click="runPostSelected">✓</button>
+          <button v-if="auth.canManageCost && canUnpostSelected" class="button button-secondary" type="button" title="Отменить проведение" @click="runUnpostSelected">↺</button>
           <button v-if="canDeleteSelected" class="button button-danger" type="button" title="Удалить" @click="removeSelected">✕</button>
         </SelectionActionBar>
 
@@ -64,7 +64,7 @@ function statusLabel(s: string) { return s === 'posted' ? 'Проведен' : s
 function openItem(id: number) { router.push(`/documents/cost-calculations/${id}`) }
 function handleRowDblClick(row: Record<string, unknown>) { router.push(`/documents/cost-calculations/${(row as any).id}`) }
 
-async function loadItems() { loading.value = true; error.value = ''; try { const r = await listCostCalculations({ page: page.value, page_size: 20, sort_order: 'desc' }); rows.value = r.data; pagination.value = { page: r.pagination?.page ?? 1, pages: r.pagination?.pages ?? 1, total: r.pagination?.total ?? 0 }; selectedIds.value = [] } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } finally { loading.value = false } }
+async function loadItems() { loading.value = true; error.value = ''; try { const r = await listCostCalculations({ page: page.value, page_size: 20, search: search.value }); rows.value = r.data; pagination.value = { page: r.pagination?.page ?? 1, pages: r.pagination?.pages ?? 1, total: r.pagination?.total ?? 0 }; selectedIds.value = [] } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } finally { loading.value = false } }
 
 async function batchAction(action: (id: number) => Promise<ApiResponse<unknown>>, errorLabel: string) {
   if (!selectedIds.value.length) return; error.value = ''; let failed = 0

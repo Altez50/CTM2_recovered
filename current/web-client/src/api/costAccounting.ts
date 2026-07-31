@@ -16,7 +16,7 @@ import type {
   SubcontractAcceptance,
   TurnoverReportResponse,
 } from '../types/costAccounting'
-import { apiRequest } from './client'
+import { apiRequest, downloadRequest } from './client'
 
 interface ListParams {
   page?: number
@@ -277,6 +277,13 @@ export function createCostCalculation(payload: CostCalculation) {
   })
 }
 
+export function updateCostCalculation(id: number, payload: CostCalculation) {
+  return apiRequest<ApiResponse<CostCalculation>>(`/api/cost/cost-calculations/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
 export function deleteCostCalculation(id: number) {
   return apiRequest<ApiResponse<unknown>>(`/api/cost/cost-calculations/${id}`, {
     method: 'DELETE',
@@ -335,3 +342,52 @@ export function getCostProfitability(period?: string | null) {
 // ── Limit Check ───────────────────────────────────────────────────────────
 // Note: limit check uses data from CostItemMaterial, returned directly from
 // the report endpoints. For now, client-side limit validation is optional.
+
+// ── Document text import / export (TSV / JSON / XLSX) ─────────────────────
+
+export type DocDataExchangeKind =
+  | 'material-consumptions'
+  | 'machinery-usage-reports'
+  | 'subcontract-acceptances'
+  | 'overhead-expenses'
+  | 'daily-reports'
+
+export interface DocImportResult {
+  imported: number
+  warnings?: string[]
+  format: string
+}
+
+/**
+ * Import tabular lines into a cost-accounting document from raw text/bytes.
+ * Missing reference entities (materials, units, works, counterparties) are
+ * created automatically on the server.
+ */
+export function importDocumentText(
+  kind: DocDataExchangeKind,
+  docId: number,
+  format: 'tsv' | 'json' | 'xlsx',
+  body: string | ArrayBuffer,
+  replace = true,
+): Promise<ApiResponse<DocImportResult>> {
+  const isBinary = format === 'xlsx' && typeof body !== 'string'
+  const headers: Record<string, string> = isBinary
+    ? { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+    : format === 'json'
+      ? { 'Content-Type': 'application/json' }
+      : { 'Content-Type': 'text/tab-separated-values; charset=utf-8' }
+  const qs = new URLSearchParams({ format, replace: String(replace) })
+  return apiRequest<ApiResponse<DocImportResult>>(
+    `/api/cost/${kind}/${docId}/import-text?${qs}`,
+    { method: 'POST', headers, body: body as BodyInit },
+  )
+}
+
+/** Export a document's tabular lines as a downloadable blob (tsv/json/xlsx). */
+export function exportDocumentText(
+  kind: DocDataExchangeKind,
+  docId: number,
+  format: 'tsv' | 'json' | 'xlsx',
+): Promise<Blob> {
+  return downloadRequest(`/api/cost/${kind}/${docId}/export-text?format=${format}`)
+}

@@ -5,10 +5,11 @@ from __future__ import annotations
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 
 from api.auth_dependencies import get_current_user, get_db, require_roles
+from api.text_import_export import export_document, import_document_lines
 from api.cost_accounting_services import (
     calculate_cost,
     cancel_overhead_distribution,
@@ -57,6 +58,7 @@ from api.models.auth import UserInfo
 from api.models.common import ApiMessage, ApiResponse
 from api.models.cost_accounting import (
     CostCalculationCreate,
+    CostCalculationUpdate,
     LimitCheckRequest,
     MachineCreate,
     MachineUpdate,
@@ -491,8 +493,9 @@ def list_cc_documents(
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=50),
+    search: str | None = None,
 ) -> ApiResponse:
-    items, pagination = list_cost_calculations(connection, page=page, page_size=page_size)
+    items, pagination = list_cost_calculations(connection, page=page, page_size=page_size, search=search)
     return ApiResponse(data=items, pagination=pagination)
 
 
@@ -515,6 +518,19 @@ def get_cc_document(
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiResponse:
     return ApiResponse(data=get_cost_calculation(connection, calc_id))
+
+
+@router.put("/cost-calculations/{calc_id}", response_model=ApiResponse)
+def update_cc_document(
+    calc_id: int,
+    payload: CostCalculationUpdate,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+) -> ApiResponse:
+    return ApiResponse(
+        data=save_cost_calculation(connection, payload.model_dump(), calc_id=calc_id),
+        message="Cost calculation updated",
+    )
 
 
 @router.delete("/cost-calculations/{calc_id}", response_model=ApiMessage)
@@ -619,4 +635,90 @@ def get_audit_logs_endpoint(
         limit=limit,
         offset=offset,
     )
-    return ApiResponse(data=items, pagination={"total": total, "limit": limit, "offset": offset})
+    page_size = limit
+    page = (offset // page_size) + 1 if page_size else 1
+    return ApiResponse(
+        data=items,
+        pagination={
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": max(1, (total + page_size - 1) // page_size),
+        },
+    )
+
+
+# ── Document text import / export (TSV / JSON / XLSX) ─────────────────────
+#
+# Unified data exchange for tabular documents. Reference columns (materials,
+# units, works, counterparties, machines) are auto-created when missing.
+
+_DOC_KIND_TO_TYPE = {
+    "material-consumptions": "material_consumption",
+    "machinery-usage-reports": "machinery_usage",
+    "subcontract-acceptances": "subcontract_acceptance",
+    "overhead-expenses": "overhead_expense",
+    "daily-reports": "daily_report",
+}
+
+
+@router.post("/{doc_kind}/{doc_id}/import-text", response_model=ApiResponse)
+async def import_doc_text(
+    doc_kind: str,
+    doc_id: int,
+    request: Request,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    format: str = Query("tsv", description="tsv | json | xlsx"),
+    replace: bool = Query(True, description="Replace existing lines"),
+) -> ApiResponse:
+    """Import tabular lines for a document.
+
+    Accepts the request body as raw text (tsv/json) or raw bytes (xlsx).
+    Missing reference entities are created automatically per the document
+    schema (see `api.text_import_export.DOCUMENT_SCHEMAS`).
+    """
+    doc_type = _DOC_KIND_TO_TYPE.get(doc_kind)
+    if not doc_type:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Unsupported document kind: {doc_kind}")
+
+    raw = await request.body()
+    if format == "xlsx":
+        data: bytes | str = raw
+    elif isinstance(raw, (bytes, bytearray)):
+        data = bytes(raw).decode("utf-8", errors="replace")
+    else:
+        data = raw or ""
+
+    result = import_document_lines(
+        connection, doc_type, doc_id, fmt=format, data=data, replace=replace
+    )
+    return ApiResponse(data=result, message=f"Imported {result.get('imported', 0)} lines")
+
+
+@router.get("/{doc_kind}/{doc_id}/export-text")
+def export_doc_text(
+    doc_kind: str,
+    doc_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    format: str = Query("tsv", description="tsv | json | xlsx"),
+) -> Response:
+    """Export a document's tabular lines to TSV / JSON / XLSX."""
+    doc_type = _DOC_KIND_TO_TYPE.get(doc_kind)
+    if not doc_type:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Unsupported document kind: {doc_kind}")
+
+    result = export_document(connection, doc_type, doc_id, fmt=format)
+    body = result["body"]
+    if isinstance(body, str):
+        body_bytes = body.encode("utf-8")
+    else:
+        body_bytes = body
+    return Response(
+        content=body_bytes,
+        media_type=result["media_type"],
+        headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
+    )

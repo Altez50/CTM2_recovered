@@ -258,6 +258,10 @@ class CostCalculationCreate(CostCalculationBase):
     pass
 
 
+class CostCalculationUpdate(CostCalculationBase):
+    pass
+
+
 class CostCalculation(CostCalculationBase, ORMModel):
     id: int
     uuid: str | None = None

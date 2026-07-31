@@ -9,10 +9,10 @@
         <FormField label="Объект (0=все)"><input v-model.number="form.object_id" class="input" type="number" min="0" /></FormField>
       </div>
       <div class="toolbar" style="margin-top: 1rem">
-        <button class="button button-primary" title="Сохранить" @click="save">💾</button>
-        <button v-if="form.id && form.status === 'draft'" class="button button-success" title="Рассчитать" @click="calculate">▶</button>
-        <button v-if="form.status === 'calculated'" class="button button-success" title="Провести" @click="post">✓</button>
-        <button v-if="form.status === 'posted'" class="button button-warning" title="Отменить проведение" @click="unpost">↺</button>
+        <button class="button button-primary" title="Сохранить" :disabled="!canEdit" @click="save">💾</button>
+        <button v-if="form.id && form.status === 'draft' && canManage" class="button button-success" title="Рассчитать" @click="calculate">▶</button>
+        <button v-if="form.status === 'calculated' && canManage" class="button button-success" title="Провести" @click="post">✓</button>
+        <button v-if="form.status === 'posted' && canManage" class="button button-warning" title="Отменить проведение" @click="unpost">↺</button>
         <span :class="['status-pill', statusClass(form.status || 'draft')]">{{ statusLabel(form.status || 'draft') }}</span>
       </div>
       <p v-if="result" style="margin-top: 1rem">
@@ -24,19 +24,30 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute, onBeforeRouteLeave, type NavigationGuard } from 'vue-router'
 import FormField from '../../components/common/FormField.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
+import { useAuthStore } from '../../stores/auth'
 import type { CostCalculation } from '../../types/costAccounting'
-import { getCostCalculation, createCostCalculation, calculateCost, postCostCalculation, unpostCostCalculation } from '../../api/costAccounting'
+import { getCostCalculation, createCostCalculation, updateCostCalculation, calculateCost, postCostCalculation, unpostCostCalculation } from '../../api/costAccounting'
 
 const props = defineProps<{ tabId?: string; id?: string }>()
 const router = useRouter(); const route = useRoute()
+const auth = useAuthStore()
 const isEdit = computed(() => !!(props.id || route.params.id))
 useHeaderBar(props.tabId, computed(() => isEdit.value ? 'Расчёт себестоимости' : 'Новый расчёт себестоимости'), ref([]))
 const error = ref(''); const today = new Date().toISOString().slice(0, 10); const thisMonth = today.slice(0, 7)
 const form = ref<CostCalculation>({ number: '', period: thisMonth, date: today, object_id: 0, status: 'draft' })
 const result = ref<{ record_count: number; status: string } | null>(null)
+// Dirty-flag / unsaved-changes tracking
+const savedSnapshot = ref<string>('')
+const isDirty = computed(() => JSON.stringify(buildPayload(form.value)) !== savedSnapshot.value)
+function buildPayload(v: CostCalculation) { return { number: v.number ?? '', period: v.period ?? '', date: v.date ?? '', object_id: v.object_id ?? 0 } }
+function markSaved() { savedSnapshot.value = JSON.stringify(buildPayload(form.value)) }
+
+const canManage = computed(() => auth.canManageCost)
+// A posted calculation is locked; editing header is allowed in draft/calculated.
+const canEdit = computed(() => (form.value.status ?? 'draft') !== 'posted')
 
 function statusClass(s: string) { return s === 'posted' ? 'posted' : s === 'calculated' ? 'success' : 'draft' }
 function statusLabel(s: string) { return s === 'posted' ? 'Проведен' : s === 'calculated' ? 'Рассчитан' : 'Черновик' }
@@ -44,15 +55,29 @@ function statusLabel(s: string) { return s === 'posted' ? 'Проведен' : s
 async function save() {
   error.value = ''
   try {
-    const r = isEdit.value ? null : await createCostCalculation(form.value)
-    if (r) { form.value = r.data; router.push(`/documents/cost-calculations/${r.data.id}`) }
+    if (isEdit.value) {
+      const r = await updateCostCalculation(form.value.id!, buildPayload(form.value))
+      form.value = r.data
+      markSaved()
+    } else {
+      const r = await createCostCalculation(buildPayload(form.value))
+      form.value = r.data
+      markSaved()
+      router.push(`/documents/cost-calculations/${r.data.id}`)
+    }
   } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка сохранения' }
 }
-async function calculate() { try { const r = await calculateCost(form.value.id!); result.value = r.data; form.value.status = 'calculated' } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка расчёта' } }
-async function post() { try { await postCostCalculation(form.value.id!); form.value.status = 'posted' } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
-async function unpost() { if (!window.confirm('Отменить проведение?')) return; try { await unpostCostCalculation(form.value.id!); form.value.status = 'draft'; result.value = null } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
+async function reload() { if (!form.value.id) return; const r = await getCostCalculation(form.value.id); form.value = r.data; markSaved() }
+async function calculate() { try { const r = await calculateCost(form.value.id!); result.value = r.data; await reload() } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка расчёта' } }
+async function post() { try { await postCostCalculation(form.value.id!); await reload() } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
+async function unpost() { if (!window.confirm('Отменить проведение?')) return; try { await unpostCostCalculation(form.value.id!); result.value = null; await reload() } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
 
-onMounted(async () => { if (isEdit.value) { try { const r = await getCostCalculation(+(props.id || route.params.id)); form.value = r.data } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } } })
+onBeforeRouteLeave((() => {
+  if (isDirty.value && !window.confirm('Есть несохранённые изменения. Покинуть страницу?')) return false
+  return true
+}) as NavigationGuard)
+
+onMounted(async () => { if (isEdit.value) { try { const r = await getCostCalculation(+(props.id || route.params.id)); form.value = r.data; markSaved() } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } } else { markSaved() } })
 </script>
 <style scoped>
 .doc-header-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }

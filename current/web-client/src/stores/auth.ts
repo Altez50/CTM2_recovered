@@ -18,6 +18,8 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     isAuthenticated: (state) => Boolean(state.token && state.user),
     isAdmin: (state) => state.user?.role === 'admin',
+    // Matches the backend AdminOrManager guard used for posting / calculation / distribution.
+    canManageCost: (state) => state.user?.role === 'admin' || state.user?.role === 'manager',
     displayName: (state) => state.user?.full_name || state.user?.username || 'Пользователь',
   },
   actions: {

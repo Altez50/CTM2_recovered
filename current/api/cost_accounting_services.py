@@ -258,16 +258,19 @@ def save_material_consumption(
         )
         doc_id = last_insert_id(connection)
     else:
-        connection.execute(
-            "SELECT is_posted FROM material_consumptions WHERE id = ?", (doc_id,)
-        )
-        if connection.fetchone() is None:
+        existing = connection.execute(
+            "SELECT id, is_posted FROM material_consumptions WHERE id = ? AND marked_for_deletion = 0",
+            (doc_id,),
+        ).fetchone()
+        if not existing:
             raise HTTPException(status_code=404, detail="Material consumption not found")
+        if existing["is_posted"]:
+            raise HTTPException(status_code=400, detail="Cannot edit a posted document. Unpost it first.")
         sets = ", ".join(f"{k} = ?" for k in payload if k not in ("lines", "id"))
         vals = [payload[k] for k in payload if k not in ("lines", "id")]
         connection.execute(
-            f"UPDATE material_consumptions SET {sets} WHERE id = ?",
-            vals + [doc_id],
+            f"UPDATE material_consumptions SET {sets}, modified_at = ? WHERE id = ?",
+            vals + [_now_iso(), doc_id],
         )
     # Replace lines
     connection.execute(
@@ -448,16 +451,18 @@ def save_machinery_usage_report(
         doc_id = last_insert_id(connection)
     else:
         existing = connection.execute(
-            "SELECT id FROM machinery_usage_reports WHERE id = ? AND marked_for_deletion = 0",
+            "SELECT id, is_posted FROM machinery_usage_reports WHERE id = ? AND marked_for_deletion = 0",
             (doc_id,),
         ).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Machinery usage report not found")
+        if existing["is_posted"]:
+            raise HTTPException(status_code=400, detail="Cannot edit a posted document. Unpost it first.")
         sets = ", ".join(f"{k} = ?" for k in payload if k not in ("lines", "id"))
         vals = [payload[k] for k in payload if k not in ("lines", "id")]
         connection.execute(
-            f"UPDATE machinery_usage_reports SET {sets} WHERE id = ?",
-            vals + [doc_id],
+            f"UPDATE machinery_usage_reports SET {sets}, modified_at = ? WHERE id = ?",
+            vals + [_now_iso(), doc_id],
         )
     connection.execute(
         "DELETE FROM machinery_usage_lines WHERE document_id = ?", (doc_id,)
@@ -652,16 +657,18 @@ def save_subcontract_acceptance(
         doc_id = last_insert_id(connection)
     else:
         existing = connection.execute(
-            "SELECT id FROM subcontract_acceptances WHERE id = ? AND marked_for_deletion = 0",
+            "SELECT id, is_posted FROM subcontract_acceptances WHERE id = ? AND marked_for_deletion = 0",
             (doc_id,),
         ).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Subcontract acceptance not found")
+        if existing["is_posted"]:
+            raise HTTPException(status_code=400, detail="Cannot edit a posted document. Unpost it first.")
         sets = ", ".join(f"{k} = ?" for k in payload if k not in ("lines", "id"))
         vals = [payload[k] for k in payload if k not in ("lines", "id")]
         connection.execute(
-            f"UPDATE subcontract_acceptances SET {sets} WHERE id = ?",
-            vals + [doc_id],
+            f"UPDATE subcontract_acceptances SET {sets}, modified_at = ? WHERE id = ?",
+            vals + [_now_iso(), doc_id],
         )
     connection.execute(
         "DELETE FROM subcontract_acceptance_lines WHERE document_id = ?", (doc_id,)
@@ -839,8 +846,8 @@ def save_overhead_expense(
         sets = ", ".join(f"{k} = ?" for k in payload if k not in ("lines", "id"))
         vals = [payload[k] for k in payload if k not in ("lines", "id")]
         connection.execute(
-            f"UPDATE overhead_expenses SET {sets} WHERE id = ?",
-            vals + [doc_id],
+            f"UPDATE overhead_expenses SET {sets}, modified_at = ? WHERE id = ?",
+            vals + [_now_iso(), doc_id],
         )
     connection.execute(
         "DELETE FROM overhead_expense_lines WHERE document_id = ?", (doc_id,)
@@ -881,14 +888,20 @@ def distribute_overhead(
 
     _ensure_cost_elements_exist(connection)
 
-    # Check if already distributed
-    existing = connection.execute(
-        "SELECT COUNT(*) FROM overhead_distribution WHERE period = ?", (period,)
-    ).fetchone()[0]
+    # Check if already distributed for this scope
+    if object_id == 0:
+        existing = connection.execute(
+            "SELECT COUNT(*) FROM overhead_distribution WHERE period = ?", (period,)
+        ).fetchone()[0]
+    else:
+        existing = connection.execute(
+            "SELECT COUNT(*) FROM overhead_distribution WHERE period = ? AND object_id = ?",
+            (period, object_id),
+        ).fetchone()[0]
     if existing > 0:
         raise HTTPException(
             status_code=400,
-            detail="Overhead for this period is already distributed. Cancel distribution first.",
+            detail="Overhead for this period/scope is already distributed. Cancel distribution first.",
         )
 
     # Get total overhead for period
@@ -932,12 +945,15 @@ def distribute_overhead(
             (period,),
         ).fetchall()
     elif base_kind == "labor_days":
+        labor_ce = _get_cost_element_id(connection, "labor")
+        if not labor_ce:
+            raise HTTPException(status_code=400, detail="LABOR cost element not found")
         base_rows = connection.execute(
             """SELECT object_id, estimate_id, work_id, COALESCE(SUM(quantity), 0) AS base_val
                FROM actual_costs
-               WHERE period = ?
+               WHERE period = ? AND cost_element_id = ?
                GROUP BY object_id, estimate_id, work_id""",
-            (period,),
+            (period, labor_ce),
         ).fetchall()
     else:
         raise HTTPException(status_code=400, detail=f"Unknown allocation base kind: {base_kind}")
@@ -946,30 +962,50 @@ def distribute_overhead(
     if total_base <= 0:
         raise HTTPException(status_code=400, detail="Allocation base value is zero — cannot distribute")
 
-    # Distribute proportionally
-    connection.execute("DELETE FROM overhead_distribution WHERE period = ?", (period,))
+    # Distribute proportionally (scope delete + insert to the requested object, if any)
+    if object_id == 0:
+        connection.execute("DELETE FROM overhead_distribution WHERE period = ?", (period,))
+    else:
+        connection.execute(
+            "DELETE FROM overhead_distribution WHERE period = ? AND object_id = ?",
+            (period, object_id),
+        )
+
+    # Resolve the rows that will actually receive a share (global base, filtered recipients)
+    target_rows = [
+        row for row in base_rows
+        if float(row["base_val"]) > 0 and (object_id == 0 or row["object_id"] == object_id)
+    ]
+
     record_count = 0
-    for row in base_rows:
+    allocated = 0.0
+    for idx, row in enumerate(target_rows):
         obj_id = row["object_id"]
         est_id = row["estimate_id"]
         work_id = row["work_id"]
         base_val = float(row["base_val"])
-        share = (base_val / total_base) * total
-        if share > 0:
-            if object_id == 0 or obj_id == object_id:
-                connection.execute(
-                    """INSERT INTO overhead_distribution
-                       (period, object_id, estimate_id, work_id, amount, allocation_base_id, base_value, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (period, obj_id, est_id, work_id, round(share, 2), allocation_base_id, base_val, _now_iso()),
-                )
-                record_count += 1
+        raw_share = (base_val / total_base) * total
+        # Last written row absorbs the rounding residual so Σ shares == pool exactly
+        if idx == len(target_rows) - 1:
+            share = round(total - allocated, 2)
+        else:
+            share = round(raw_share, 2)
+        allocated += share
+        connection.execute(
+            """INSERT INTO overhead_distribution
+               (period, object_id, estimate_id, work_id, amount, allocation_base_id, base_value, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (period, obj_id, est_id, work_id, share, allocation_base_id, base_val, _now_iso()),
+        )
+        record_count += 1
 
-    # Mark overhead documents as distributed
-    connection.execute(
-        "UPDATE overhead_expenses SET is_distributed = 1 WHERE period = ? AND marked_for_deletion = 0",
-        (period,),
-    )
+    # Mark overhead documents as distributed only on a full (all-objects) distribution.
+    # Per-object distribution is a partial operation and must not lock the whole period.
+    if object_id == 0:
+        connection.execute(
+            "UPDATE overhead_expenses SET is_distributed = 1 WHERE period = ? AND marked_for_deletion = 0",
+            (period,),
+        )
     _audit_log(connection, action="distribute", resource_type="overhead", resource_id=0,
                details=f"Overhead distributed for {period}: base={base_row['name']}, total={round(total, 2)}, records={record_count}")
     connection.commit()
@@ -1011,19 +1047,25 @@ def list_cost_calculations(
     connection: sqlite3.Connection,
     page: int = 1,
     page_size: int = 20,
+    search: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    where = "WHERE cc.marked_for_deletion = 0"
+    params: list[Any] = []
+    if search:
+        where += " AND (cc.number LIKE ? OR cc.period LIKE ?)"
+        params.extend([f"%{search}%", f"%{search}%"])
     total = connection.execute(
-        "SELECT COUNT(*) FROM cost_calculations WHERE marked_for_deletion = 0"
+        f"SELECT COUNT(*) FROM cost_calculations cc {where}", params
     ).fetchone()[0]
     offset = (page - 1) * page_size
     rows = connection.execute(
-        """SELECT cc.*, o.name AS object_name
-           FROM cost_calculations cc
-           LEFT JOIN objects o ON o.id = cc.object_id
-           WHERE cc.marked_for_deletion = 0
-           ORDER BY cc.period DESC, cc.id DESC
-           LIMIT ? OFFSET ?""",
-        (page_size, offset),
+        f"""SELECT cc.*, o.name AS object_name
+            FROM cost_calculations cc
+            LEFT JOIN objects o ON o.id = cc.object_id
+            {where}
+            ORDER BY cc.period DESC, cc.id DESC
+            LIMIT ? OFFSET ?""",
+        params + [page_size, offset],
     ).fetchall()
     items = [dict(row) for row in rows]
     return items, {
@@ -1108,45 +1150,55 @@ def calculate_cost(
         "DELETE FROM completed_works_cost WHERE calculation_id = ?", (calc_id,)
     )
 
-    # Aggregate: actual costs + overhead per work
+    # Aggregate: actual costs + overhead per (object, work).
+    # Grouping by object_id preserves object identity for all-objects calculations
+    # (object_id == 0) so per-object reports stay correct.
     results = connection.execute(
         f"""SELECT
+               COALESCE(object_id, 0) AS object_id,
                work_id,
                COALESCE(SUM(amount), 0) AS actual_direct,
                COALESCE(SUM(quantity), 0) AS completed_qty
             FROM actual_costs
             WHERE period = ? {obj_filter}
-            GROUP BY work_id""",
+            GROUP BY COALESCE(object_id, 0), work_id""",
         (period,) + obj_params,
     ).fetchall()
 
-    # Get overhead distribution totals per work
+    # Get overhead distribution totals per (object, work)
     overhead_rows = connection.execute(
-        f"""SELECT work_id, COALESCE(SUM(amount), 0) AS overhead_amount
+        f"""SELECT COALESCE(object_id, 0) AS object_id, work_id,
+                   COALESCE(SUM(amount), 0) AS overhead_amount
             FROM overhead_distribution
             WHERE period = ? {obj_filter}
-            GROUP BY work_id""",
+            GROUP BY COALESCE(object_id, 0), work_id""",
         (period,) + obj_params,
     ).fetchall()
-    overhead_map = {row["work_id"]: float(row["overhead_amount"]) for row in overhead_rows}
+    overhead_map = {
+        (row["object_id"], row["work_id"]): float(row["overhead_amount"]) for row in overhead_rows
+    }
 
-    # Get planned costs per work
+    # Get planned costs per (object, work)
     planned_rows = connection.execute(
-        f"""SELECT work_id, COALESCE(SUM(planned_amount), 0) AS planned_total
+        f"""SELECT COALESCE(object_id, 0) AS object_id, work_id,
+                   COALESCE(SUM(planned_amount), 0) AS planned_total
             FROM planned_costs
             WHERE period = ? {obj_filter}
-            GROUP BY work_id""",
+            GROUP BY COALESCE(object_id, 0), work_id""",
         (period,) + obj_params,
     ).fetchall()
-    planned_map = {row["work_id"]: float(row["planned_total"]) for row in planned_rows}
+    planned_map = {
+        (row["object_id"], row["work_id"]): float(row["planned_total"]) for row in planned_rows
+    }
 
     record_count = 0
     for row in results:
         work_id = row["work_id"]
+        row_obj_id = row["object_id"]
         actual_direct = float(row["actual_direct"])
-        overhead = overhead_map.get(work_id, 0.0)
+        overhead = overhead_map.get((row_obj_id, work_id), 0.0)
         actual_cost = actual_direct + overhead
-        planned_cost = planned_map.get(work_id, 0.0)
+        planned_cost = planned_map.get((row_obj_id, work_id), 0.0)
         completed_qty = float(row["completed_qty"])
         deviation = round(actual_cost - planned_cost, 2)
         # Contract value = planned_cost (default; can be overridden)
@@ -1159,7 +1211,7 @@ def calculate_cost(
                 planned_cost, actual_cost, deviation, contract_value, profit, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                period, calc_id, object_id, work_id, completed_qty,
+                period, calc_id, row_obj_id, work_id, completed_qty,
                 round(planned_cost, 2), round(actual_cost, 2),
                 deviation, round(contract_value, 2), profit, _now_iso(),
             ),

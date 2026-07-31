@@ -60,6 +60,7 @@
         <div class="toolbar">
           <button class="button button-secondary" type="button" @click="fillFromEstimate">Заполнить из сметы</button>
           <button class="button button-secondary" type="button" @click="addLine">Добавить строку</button>
+          <button v-if="isEdit" class="button button-secondary" type="button" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
           <label class="sum-toggle">
             <input v-model="showSumColumns" type="checkbox" />
             Суммовые колонки
@@ -160,6 +161,7 @@
         <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
       </div>
     </section>
+    <DocumentDataExchangeDialog v-if="isEdit" :open="dataExchangeOpen" kind="daily-reports" :doc-id="Number(props.id)" title="Дневной отчёт" @close="dataExchangeOpen = false" @imported="loadDocument" />
   </div>
 </template>
 
@@ -169,6 +171,7 @@ import { useRouter } from 'vue-router'
 import EntityPicker, { type PickerItem } from '../../components/common/EntityPicker.vue'
 import FormField from '../../components/common/FormField.vue'
 import WorkPicker from '../../components/common/WorkPicker.vue'
+import DocumentDataExchangeDialog from '../../components/documents/DocumentDataExchangeDialog.vue'
 import { useDocumentDensity } from '../../composables/useDocumentDensity'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import { createDailyReport, getDailyReport, getEstimate, listEstimates, postDailyReport, printDailyReportAct, unpostDailyReport, updateDailyReport } from '../../api/documents'
@@ -186,6 +189,7 @@ const { isCompactMode } = useDocumentDensity()
 const saving = ref(false)
 const error = ref('')
 const showSumColumns = ref(false)
+const dataExchangeOpen = ref(false)
 
 const form = ref<DailyReport>({
   number: '',
@@ -293,8 +297,10 @@ function addLine() {
   form.value.lines.push(createLine())
 }
 
-function handleWorkChange(line: DailyReportLine, work: { name: string } | null) {
+function handleWorkChange(line: DailyReportLine, work: { name: string; unit?: string | null } | null) {
   line.work_name = work?.name ?? null
+  // auto-fill unit from the selected work (DailyReportLine has a `unit` field)
+  line.unit = work?.unit ?? ''
 }
 
 function removeLine(lineNumber: number) {

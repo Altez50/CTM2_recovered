@@ -36,6 +36,7 @@ export interface MaterialConsumptionLine {
   price: number
   sum: number
   cost_element_id: number | null
+  unit?: string | null
   work_name?: string | null
   material_name?: string | null
 }
@@ -67,6 +68,7 @@ export interface MachineryUsageLine {
   hours: number
   machine_cost: number
   operator_labor: number
+  unit?: string | null
   machine_name?: string | null
   work_name?: string | null
 }
@@ -96,6 +98,7 @@ export interface SubcontractAcceptanceLine {
   counterparty_id: number | null
   sum: number
   description: string
+  unit?: string | null
   work_name?: string | null
   counterparty_name?: string | null
 }

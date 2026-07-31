@@ -48,18 +48,20 @@
       </div>
       <div class="toolbar" style="margin-top: 1rem">
         <button class="button button-secondary" @click="addLine" :disabled="form.is_posted">+ Строка</button>
+        <button class="button button-secondary" :disabled="!isEdit || form.is_posted" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
         <button class="button button-primary" title="Сохранить" @click="save">💾</button>
         <button v-if="isEdit && !form.is_posted" class="button button-success" title="Провести" @click="post">✓</button>
         <button v-if="isEdit && form.is_posted" class="button button-warning" title="Отменить проведение" @click="unpost">↺</button>
         <span v-if="form.id" :class="['status-pill', form.is_posted ? 'posted' : 'draft']">{{ form.is_posted ? 'Проведен' : 'Черновик' }}</span>
       </div>
       <table class="line-table" style="margin-top: 1rem" v-if="form.lines.length">
-        <thead><tr><th>№</th><th>Работа</th><th>Материал</th><th class="num">Лимит</th><th class="num">Списано</th><th class="num">Цена</th><th class="num">Сумма</th><th></th></tr></thead>
+        <thead><tr><th>№</th><th>Работа</th><th>Материал</th><th>Ед.</th><th class="num">Лимит</th><th class="num">Списано</th><th class="num">Цена</th><th class="num">Сумма</th><th></th></tr></thead>
         <tbody>
           <tr v-for="(line, i) in form.lines" :key="i">
             <td>{{ i + 1 }}</td>
-            <td class="picker-cell"><WorkPicker :model-value="line.work_id ?? null" :selected-label="line.work_name ?? null" compact @update:model-value="(v) => { line.work_id = v }" @change="(w) => { line.work_name = w?.name ?? null }" /></td>
-            <td class="picker-cell"><EntityPicker :model-value="line.material_id ?? null" :selected-label="line.material_name ?? null" title="Выбор материала" placeholder="Выберите" search-placeholder="Поиск…" empty-text="Не найдено" size="compact" :disabled="form.is_posted" edit-kind="materials" :load-page="loadMaterialPage" @update:model-value="(v) => { line.material_id = v }" @change="(item) => { line.material_name = item?.label ?? null; if (item?.meta?.price) { line.price = item.meta.price as number; calcLine(line) } }" /></td>
+            <td class="picker-cell"><WorkPicker :model-value="line.work_id ?? null" :selected-label="line.work_name ?? null" compact @update:model-value="(v) => { line.work_id = v }" @change="(w) => { line.work_name = w?.name ?? null; if (w?.unit) line.unit = w.unit }" /></td>
+            <td class="picker-cell"><EntityPicker :model-value="line.material_id ?? null" :selected-label="line.material_name ?? null" title="Выбор материала" placeholder="Выберите" search-placeholder="Поиск…" empty-text="Не найдено" size="compact" :disabled="form.is_posted" edit-kind="materials" :load-page="loadMaterialPage" @update:model-value="(v) => { line.material_id = v }" @change="(item) => { line.material_name = item?.label ?? null; if (item?.meta?.price) { line.price = item.meta.price as number }; if (item?.meta?.unit) line.unit = String(item.meta.unit) }" /></td>
+            <td><input v-model="line.unit" class="input input-sm" placeholder="ед." :disabled="form.is_posted" /></td>
             <td class="num">{{ line.planned_quantity }}</td>
             <td><input v-model.number="line.actual_quantity" class="input input-sm" type="number" step="0.01" :disabled="form.is_posted" /></td>
             <td><input v-model.number="line.price" class="input input-sm" type="number" step="0.01" :disabled="form.is_posted" @change="calcLine(line)" /></td>
@@ -69,6 +71,7 @@
         </tbody>
       </table>
     </div></section>
+    <DocumentDataExchangeDialog v-if="form.id" :open="dataExchangeOpen" kind="material-consumptions" :doc-id="form.id" title="Расход материалов" @close="dataExchangeOpen = false" />
   </div>
 </template>
 
@@ -78,6 +81,7 @@ import { useRouter, useRoute } from 'vue-router'
 import FormField from '../../components/common/FormField.vue'
 import EntityPicker from '../../components/common/EntityPicker.vue'
 import WorkPicker from '../../components/common/WorkPicker.vue'
+import DocumentDataExchangeDialog from '../../components/documents/DocumentDataExchangeDialog.vue'
 import type { PickerItem } from '../../components/common/EntityPicker.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import type { MaterialConsumption, MaterialConsumptionLine } from '../../types/costAccounting'
@@ -93,6 +97,7 @@ const isEdit = computed(() => !!props.id || !!route.params.id)
 useHeaderBar(props.tabId, computed(() => isEdit.value ? 'Расход материалов' : 'Новый расход материалов'), ref([]))
 
 const error = ref('')
+const dataExchangeOpen = ref(false)
 const today = new Date().toISOString().slice(0, 10)
 
 const emptyLine = (): MaterialConsumptionLine => ({ line_number: 0, work_id: null, material_id: null, planned_quantity: 0, actual_quantity: 0, price: 0, sum: 0, cost_element_id: null })
@@ -117,7 +122,7 @@ async function loadPersonPage(params: { search: string; page: number; pageSize: 
 }
 async function loadMaterialPage(params: { search: string; page: number; pageSize: number }) {
   const resp = await listReferences('materials', { page: params.page, page_size: Math.min(params.pageSize, 50), search: params.search })
-  return { items: (resp.data as MaterialRecord[]).map(m => ({ id: m.id, label: m.name, caption: m.unit_name ?? null, meta: { price: m.price ?? 0 } })), pages: resp.pagination?.pages ?? 1 }
+  return { items: (resp.data as MaterialRecord[]).map(m => ({ id: m.id, label: m.name, caption: m.unit_name ?? null, meta: { price: m.price ?? 0, unit: m.unit_name ?? '' } })), pages: resp.pagination?.pages ?? 1 }
 }
 
 async function save() {
@@ -136,6 +141,10 @@ async function unpost() { try { await unpostMaterialConsumption(form.value.id!);
 onMounted(async () => {
   if (isEdit.value) { try { const r = await getMaterialConsumption(+(props.id || route.params.id)); form.value = r.data } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } }
 })
+
+async function reload() {
+  if (isEdit.value) { try { const r = await getMaterialConsumption(+(props.id || route.params.id)); form.value = r.data } catch {} }
+}
 </script>
 
 <style scoped>

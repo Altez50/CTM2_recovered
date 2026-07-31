@@ -797,6 +797,212 @@ CREATE TABLE IF NOT EXISTS constants (
     value TEXT
 );
 
+-- ── Cost accounting subsystem ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS allocation_bases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT '',
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT,
+    modified_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cost_elements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT '',
+    is_direct INTEGER NOT NULL DEFAULT 1,
+    is_predefined INTEGER NOT NULL DEFAULT 0,
+    allocation_base_id INTEGER,
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT,
+    modified_at TEXT,
+    FOREIGN KEY (allocation_base_id) REFERENCES allocation_bases(id)
+);
+
+CREATE TABLE IF NOT EXISTS machines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL DEFAULT '',
+    code TEXT NOT NULL DEFAULT '',
+    cost_per_hour REAL NOT NULL DEFAULT 0,
+    operator_rate_per_hour REAL NOT NULL DEFAULT 0,
+    unit TEXT NOT NULL DEFAULT 'маш.-ч',
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT,
+    modified_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS material_consumptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT,
+    number TEXT NOT NULL DEFAULT '',
+    date TEXT NOT NULL,
+    object_id INTEGER,
+    estimate_id INTEGER,
+    foreman_id INTEGER,
+    warehouse TEXT NOT NULL DEFAULT '',
+    is_posted INTEGER NOT NULL DEFAULT 0,
+    posted_at TEXT,
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS material_consumption_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    line_number INTEGER NOT NULL DEFAULT 1,
+    work_id INTEGER,
+    material_id INTEGER,
+    planned_quantity REAL NOT NULL DEFAULT 0,
+    actual_quantity REAL NOT NULL DEFAULT 0,
+    price REAL NOT NULL DEFAULT 0,
+    sum REAL NOT NULL DEFAULT 0,
+    cost_element_id INTEGER,
+    FOREIGN KEY (document_id) REFERENCES material_consumptions(id)
+);
+
+CREATE TABLE IF NOT EXISTS machinery_usage_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT,
+    number TEXT NOT NULL DEFAULT '',
+    date TEXT NOT NULL,
+    object_id INTEGER,
+    estimate_id INTEGER,
+    foreman_id INTEGER,
+    is_posted INTEGER NOT NULL DEFAULT 0,
+    posted_at TEXT,
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS machinery_usage_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    line_number INTEGER NOT NULL DEFAULT 1,
+    machine_id INTEGER,
+    work_id INTEGER,
+    hours REAL NOT NULL DEFAULT 0,
+    machine_cost REAL NOT NULL DEFAULT 0,
+    operator_labor REAL NOT NULL DEFAULT 0,
+    FOREIGN KEY (document_id) REFERENCES machinery_usage_reports(id)
+);
+
+CREATE TABLE IF NOT EXISTS subcontract_acceptances (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT,
+    number TEXT NOT NULL DEFAULT '',
+    date TEXT NOT NULL,
+    object_id INTEGER,
+    estimate_id INTEGER,
+    is_posted INTEGER NOT NULL DEFAULT 0,
+    posted_at TEXT,
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS subcontract_acceptance_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    line_number INTEGER NOT NULL DEFAULT 1,
+    work_id INTEGER,
+    counterparty_id INTEGER,
+    sum REAL NOT NULL DEFAULT 0,
+    description TEXT NOT NULL DEFAULT '',
+    unit TEXT,
+    FOREIGN KEY (document_id) REFERENCES subcontract_acceptances(id)
+);
+
+CREATE TABLE IF NOT EXISTS overhead_expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT,
+    number TEXT NOT NULL DEFAULT '',
+    date TEXT NOT NULL,
+    period TEXT NOT NULL DEFAULT '',
+    is_distributed INTEGER NOT NULL DEFAULT 0,
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS overhead_expense_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    line_number INTEGER NOT NULL DEFAULT 1,
+    cost_element_id INTEGER,
+    counterparty_id INTEGER,
+    sum REAL NOT NULL DEFAULT 0,
+    description TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (document_id) REFERENCES overhead_expenses(id)
+);
+
+CREATE TABLE IF NOT EXISTS cost_calculations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT,
+    number TEXT NOT NULL DEFAULT '',
+    period TEXT NOT NULL DEFAULT '',
+    date TEXT NOT NULL,
+    object_id INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'draft',
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT
+);
+
+-- Cost accounting registers
+CREATE TABLE IF NOT EXISTS planned_costs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    period TEXT NOT NULL,
+    estimate_id INTEGER,
+    object_id INTEGER,
+    work_id INTEGER,
+    cost_element_id INTEGER,
+    planned_quantity REAL NOT NULL DEFAULT 0,
+    planned_amount REAL NOT NULL DEFAULT 0,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS actual_costs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    period TEXT NOT NULL,
+    date TEXT,
+    registrar_type TEXT NOT NULL DEFAULT '',
+    registrar_id INTEGER NOT NULL DEFAULT 0,
+    object_id INTEGER,
+    estimate_id INTEGER,
+    work_id INTEGER,
+    cost_element_id INTEGER,
+    quantity REAL NOT NULL DEFAULT 0,
+    amount REAL NOT NULL DEFAULT 0,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS overhead_distribution (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    period TEXT NOT NULL,
+    object_id INTEGER,
+    estimate_id INTEGER,
+    work_id INTEGER,
+    amount REAL NOT NULL DEFAULT 0,
+    allocation_base_id INTEGER,
+    base_value REAL NOT NULL DEFAULT 0,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS completed_works_cost (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    period TEXT NOT NULL,
+    calculation_id INTEGER NOT NULL,
+    object_id INTEGER,
+    work_id INTEGER,
+    completed_quantity REAL NOT NULL DEFAULT 0,
+    planned_cost REAL NOT NULL DEFAULT 0,
+    actual_cost REAL NOT NULL DEFAULT 0,
+    deviation REAL NOT NULL DEFAULT 0,
+    contract_value REAL NOT NULL DEFAULT 0,
+    profit REAL NOT NULL DEFAULT 0,
+    created_at TEXT,
+    FOREIGN KEY (calculation_id) REFERENCES cost_calculations(id)
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
@@ -878,6 +1084,27 @@ CREATE INDEX IF NOT EXISTS idx_mutual_dims ON mutual_settlements_register(period
 CREATE INDEX IF NOT EXISTS idx_sync_changes_entity ON sync_changes(entity_type, entity_uuid);
 CREATE INDEX IF NOT EXISTS idx_sync_changes_node_created ON sync_changes(node_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_object_version_entity ON object_version_history(entity_type, entity_uuid);
+
+-- Cost accounting indexes
+CREATE INDEX IF NOT EXISTS idx_cost_elements_kind ON cost_elements(kind);
+CREATE INDEX IF NOT EXISTS idx_material_consumptions_date ON material_consumptions(date);
+CREATE INDEX IF NOT EXISTS idx_material_consumption_lines_doc ON material_consumption_lines(document_id);
+CREATE INDEX IF NOT EXISTS idx_machinery_usage_reports_date ON machinery_usage_reports(date);
+CREATE INDEX IF NOT EXISTS idx_machinery_usage_lines_doc ON machinery_usage_lines(document_id);
+CREATE INDEX IF NOT EXISTS idx_subcontract_acceptances_date ON subcontract_acceptances(date);
+CREATE INDEX IF NOT EXISTS idx_subcontract_acceptance_lines_doc ON subcontract_acceptance_lines(document_id);
+CREATE INDEX IF NOT EXISTS idx_overhead_expenses_period ON overhead_expenses(period);
+CREATE INDEX IF NOT EXISTS idx_overhead_expense_lines_doc ON overhead_expense_lines(document_id);
+CREATE INDEX IF NOT EXISTS idx_cost_calculations_period ON cost_calculations(period);
+CREATE INDEX IF NOT EXISTS idx_planned_costs_period_obj ON planned_costs(period, object_id);
+CREATE INDEX IF NOT EXISTS idx_planned_costs_work ON planned_costs(work_id);
+CREATE INDEX IF NOT EXISTS idx_actual_costs_period_obj ON actual_costs(period, object_id);
+CREATE INDEX IF NOT EXISTS idx_actual_costs_work ON actual_costs(work_id);
+CREATE INDEX IF NOT EXISTS idx_actual_costs_registrar ON actual_costs(registrar_type, registrar_id);
+CREATE INDEX IF NOT EXISTS idx_actual_costs_element ON actual_costs(cost_element_id);
+CREATE INDEX IF NOT EXISTS idx_overhead_distribution_period ON overhead_distribution(period);
+CREATE INDEX IF NOT EXISTS idx_completed_works_calc ON completed_works_cost(calculation_id);
+CREATE INDEX IF NOT EXISTS idx_completed_works_period_obj ON completed_works_cost(period, object_id);
 """
 
 DEFAULT_UNITS = [
@@ -1088,6 +1315,16 @@ def ensure_runtime_schema(connection: sqlite3.Connection) -> None:
         _ensure_column(connection, "daily_report_lines", "price", "REAL NOT NULL DEFAULT 0")
         _ensure_column(connection, "daily_report_lines", "actual_sum", "REAL NOT NULL DEFAULT 0")
 
+    # Unit column on cost-accounting line tables (stored text snapshot of the
+    # material/work/machine unit, used for display and text import/export).
+    for _line_tbl in (
+        "material_consumption_lines",
+        "machinery_usage_lines",
+        "subcontract_acceptance_lines",
+    ):
+        if _table_exists(connection, _line_tbl):
+            _ensure_column(connection, _line_tbl, "unit", "TEXT")
+
     if _table_exists(connection, "contracts"):
         _ensure_column(connection, "contracts", "organization_id", "INTEGER")
         _ensure_column(connection, "contracts", "kind", "TEXT NOT NULL DEFAULT 'supply'")
@@ -1099,7 +1336,17 @@ def ensure_runtime_schema(connection: sqlite3.Connection) -> None:
 
     _set_constant(connection, "schema.version", SYNC_SCHEMA_VERSION)
     seed_runtime_catalogs(connection)
+    _seed_cost_accounting_catalogs(connection)
     ensure_local_sync_node(connection)
+
+
+def _seed_cost_accounting_catalogs(connection: sqlite3.Connection) -> None:
+    """Seed predefined cost elements and allocation bases (idempotent)."""
+    if not _table_exists(connection, "cost_elements"):
+        return
+    from api.services import _ensure_cost_elements_exist
+
+    _ensure_cost_elements_exist(connection)
 
 
 def _ensure_sync_columns(connection: sqlite3.Connection, table_name: str) -> None:

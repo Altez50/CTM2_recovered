@@ -9,6 +9,17 @@
         </div>
         <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
 
+        <div v-if="auth.canManageCost" class="toolbar distribution-bar">
+          <span class="muted">Распределение за период:</span>
+          <input v-model="distPeriod" class="input input-period" type="text" placeholder="YYYY-MM" />
+          <select v-model.number="distBaseId" class="input">
+            <option :value="0" disabled>База распределения…</option>
+            <option v-for="b in allocationBases" :key="b.id" :value="b.id">{{ b.name }}</option>
+          </select>
+          <button class="button button-success" :disabled="!distBaseId || distributing" @click="runDistribute">Распределить</button>
+          <button class="button button-warning" :disabled="distributing" @click="runCancelDistribution">Отменить распределение</button>
+        </div>
+
         <SelectionActionBar :selected-count="selectedIds.length" @deselect-all="selectedIds = []">
           <button v-if="selectedIds.length === 1" class="button button-secondary" type="button" @click="openItem(Number(selectedIds[0]))">Открыть</button>
           <button class="button button-danger" type="button" title="Удалить" @click="removeSelected">✕</button>
@@ -37,8 +48,8 @@ import SelectionActionBar from '../../components/common/SelectionActionBar.vue'
 import { useAuthStore } from '../../stores/auth'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import type { HeaderAction } from '../../stores/headerBar'
-import type { OverheadExpense } from '../../types/costAccounting'
-import { listOverheadExpenses, deleteOverheadExpense } from '../../api/costAccounting'
+import type { OverheadExpense, AllocationBase } from '../../types/costAccounting'
+import { listOverheadExpenses, deleteOverheadExpense, listAllocationBases, distributeOverhead, cancelOverheadDistribution } from '../../api/costAccounting'
 
 const props = defineProps<{ tabId?: string }>()
 const auth = useAuthStore(); const router = useRouter()
@@ -49,13 +60,39 @@ const rows = ref<OverheadExpense[]>([]); const loading = ref(false); const error
 const pagination = ref({ page: 1, pages: 1, total: 0 }); const selectedIds = ref<string[]>([]); let searchTimer = 0
 const columns = [{ key: 'number', label: 'Номер' }, { key: 'date', label: 'Дата' }, { key: 'period', label: 'Период' }, { key: 'is_distributed', label: 'Статус' }]
 
+// Distribution controls
+const allocationBases = ref<AllocationBase[]>([])
+const distPeriod = ref(new Date().toISOString().slice(0, 7))
+const distBaseId = ref(0)
+const distributing = ref(false)
+
 function formatDate(v: any) { if (!v) return '—'; const [y,m,d] = String(v).split('-').map(Number); return y && m && d ? new Date(y,m-1,d).toLocaleDateString('ru-RU') : v }
 function openItem(id: number) { router.push(`/documents/overhead-expenses/${id}`) }
 function handleRowDblClick(row: Record<string, unknown>) { router.push(`/documents/overhead-expenses/${(row as any).id}`) }
 
-async function loadItems() { loading.value = true; error.value = ''; try { const r = await listOverheadExpenses({ page: page.value, page_size: 20, search: search.value, sort_order: 'desc' }); rows.value = r.data; pagination.value = { page: r.pagination?.page ?? 1, pages: r.pagination?.pages ?? 1, total: r.pagination?.total ?? 0 }; selectedIds.value = [] } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } finally { loading.value = false } }
+async function loadItems() { loading.value = true; error.value = ''; try { const r = await listOverheadExpenses({ page: page.value, page_size: 20, search: search.value }); rows.value = r.data; pagination.value = { page: r.pagination?.page ?? 1, pages: r.pagination?.pages ?? 1, total: r.pagination?.total ?? 0 }; selectedIds.value = [] } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } finally { loading.value = false } }
 async function removeSelected() { if (!selectedIds.value.length) return; const label = selectedIds.value.length === 1 ? 'документ' : `${selectedIds.value.length} документов`; if (!window.confirm(`Пометить ${label} на удаление?`)) return; error.value = ''; let failed = 0; for (const id of selectedIds.value) { try { await deleteOverheadExpense(Number(id)) } catch { failed++ } }; await loadItems(); if (failed) error.value = `Не удалось удалить ${failed} документов` }
 
-watch(page, loadItems); watch(search, () => { clearTimeout(searchTimer); searchTimer = window.setTimeout(() => { page.value = 1; loadItems() }, 300) }); onMounted(loadItems)
+async function runDistribute() {
+  if (!distPeriod.value || !distBaseId.value) return
+  if (!window.confirm(`Распределить накладные расходы за период ${distPeriod.value}?`)) return
+  distributing.value = true; error.value = ''
+  try {
+    const res = await distributeOverhead({ period: distPeriod.value, allocation_base_id: distBaseId.value, object_id: 0 })
+    const d = (res as any).data
+    error.value = `Распределено: ${d?.total_distributed ?? 0} (записей: ${d?.record_count ?? 0})`
+    await loadItems()
+  } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка распределения' } finally { distributing.value = false }
+}
+async function runCancelDistribution() {
+  if (!distPeriod.value) return
+  if (!window.confirm(`Отменить распределение за период ${distPeriod.value}?`)) return
+  distributing.value = true; error.value = ''
+  try { await cancelOverheadDistribution(distPeriod.value); await loadItems() } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка отмены' } finally { distributing.value = false }
+}
+
+async function loadBases() { try { const r = await listAllocationBases(); allocationBases.value = r.data } catch { /* ignore */ } }
+
+watch(page, loadItems); watch(search, () => { clearTimeout(searchTimer); searchTimer = window.setTimeout(() => { page.value = 1; loadItems() }, 300) }); onMounted(async () => { await loadBases(); await loadItems() })
 </script>
-<style scoped>.pagination-row { justify-content: space-between; margin-top: 1rem; }</style>
+<style scoped>.pagination-row { justify-content: space-between; margin-top: 1rem; } .distribution-bar { margin: 0.5rem 0; gap: 0.5rem; flex-wrap: wrap; } .input-period { width: 110px; }</style>

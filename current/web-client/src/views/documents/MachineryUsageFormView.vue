@@ -47,18 +47,20 @@
       </div>
       <div class="toolbar" style="margin-top: 1rem">
         <button class="button button-secondary" @click="addLine" :disabled="form.is_posted">+ Строка</button>
+        <button class="button button-secondary" :disabled="!isEdit || form.is_posted" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
         <button class="button button-primary" title="Сохранить" @click="save">💾</button>
         <button v-if="isEdit && !form.is_posted" class="button button-success" title="Провести" @click="post">✓</button>
         <button v-if="isEdit && form.is_posted" class="button button-warning" title="Отменить проведение" @click="unpost">↺</button>
         <span v-if="form.id" :class="['status-pill', form.is_posted ? 'posted' : 'draft']">{{ form.is_posted ? 'Проведен' : 'Черновик' }}</span>
       </div>
       <table class="line-table" style="margin-top: 1rem" v-if="form.lines.length">
-        <thead><tr><th>№</th><th>Машина</th><th>Работа</th><th class="num">Часы</th><th class="num">Стоимость маш.</th><th class="num">ЗП машиниста</th><th></th></tr></thead>
+        <thead><tr><th>№</th><th>Машина</th><th>Работа</th><th>Ед.</th><th class="num">Часы</th><th class="num">Стоимость маш.</th><th class="num">ЗП машиниста</th><th></th></tr></thead>
         <tbody>
           <tr v-for="(line, i) in form.lines" :key="i">
             <td>{{ i + 1 }}</td>
-            <td class="picker-cell"><EntityPicker :model-value="line.machine_id ?? null" :selected-label="line.machine_name ?? null" title="Выбор машины" placeholder="Выберите" search-placeholder="Поиск…" empty-text="Не найдено" size="compact" :disabled="form.is_posted" :load-page="loadMachinePage" @update:model-value="(v) => { line.machine_id = v }" @change="(item) => { line.machine_name = item?.label ?? null; if (item?.meta) { line.machine_cost = (item.meta.cost_per_hour as number) * line.hours; line.operator_labor = (item.meta.operator_rate as number) * line.hours } }" /></td>
-            <td class="picker-cell"><WorkPicker :model-value="line.work_id ?? null" :selected-label="line.work_name ?? null" compact @update:model-value="(v) => { line.work_id = v }" @change="(w) => { line.work_name = w?.name ?? null }" /></td>
+            <td class="picker-cell"><EntityPicker :model-value="line.machine_id ?? null" :selected-label="line.machine_name ?? null" title="Выбор машины" placeholder="Выберите" search-placeholder="Поиск…" empty-text="Не найдено" size="compact" :disabled="form.is_posted" :load-page="loadMachinePage" @update:model-value="(v) => { line.machine_id = v }" @change="(item) => { line.machine_name = item?.label ?? null; if (item?.meta) { line.machine_cost = (item.meta.cost_per_hour as number) * line.hours; line.operator_labor = (item.meta.operator_rate as number) * line.hours; if (item.meta.unit) line.unit = String(item.meta.unit) } }" /></td>
+            <td class="picker-cell"><WorkPicker :model-value="line.work_id ?? null" :selected-label="line.work_name ?? null" compact @update:model-value="(v) => { line.work_id = v }" @change="(w) => { line.work_name = w?.name ?? null; if (w?.unit) line.unit = w.unit }" /></td>
+            <td><input v-model="line.unit" class="input input-sm" placeholder="ед." :disabled="form.is_posted" /></td>
             <td><input v-model.number="line.hours" class="input input-sm" type="number" step="0.1" :disabled="form.is_posted" /></td>
             <td><input v-model.number="line.machine_cost" class="input input-sm" type="number" step="0.01" :disabled="form.is_posted" /></td>
             <td><input v-model.number="line.operator_labor" class="input input-sm" type="number" step="0.01" :disabled="form.is_posted" /></td>
@@ -67,6 +69,7 @@
         </tbody>
       </table>
     </div></section>
+    <DocumentDataExchangeDialog v-if="form.id" :open="dataExchangeOpen" kind="machinery-usage-reports" :doc-id="form.id" title="Использование машин" @close="dataExchangeOpen = false" @imported="reload" />
   </div>
 </template>
 
@@ -76,6 +79,7 @@ import { useRouter, useRoute } from 'vue-router'
 import FormField from '../../components/common/FormField.vue'
 import EntityPicker from '../../components/common/EntityPicker.vue'
 import WorkPicker from '../../components/common/WorkPicker.vue'
+import DocumentDataExchangeDialog from '../../components/documents/DocumentDataExchangeDialog.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import type { MachineryUsageReport, MachineryUsageLine, Machine } from '../../types/costAccounting'
 import { getMachineryUsageReport, createMachineryUsageReport, updateMachineryUsageReport, postMachineryUsageReport, unpostMachineryUsageReport, listMachines } from '../../api/costAccounting'
@@ -88,8 +92,8 @@ const props = defineProps<{ tabId?: string; id?: string }>()
 const router = useRouter(); const route = useRoute()
 const isEdit = computed(() => !!(props.id || route.params.id))
 useHeaderBar(props.tabId, computed(() => isEdit.value ? 'Рапорт машин' : 'Новый рапорт машин'), ref([]))
-const error = ref(''); const today = new Date().toISOString().slice(0, 10)
-const emptyLine = (): MachineryUsageLine => ({ line_number: 0, machine_id: null, work_id: null, hours: 0, machine_cost: 0, operator_labor: 0 })
+const error = ref(''); const dataExchangeOpen = ref(false); const today = new Date().toISOString().slice(0, 10)
+const emptyLine = (): MachineryUsageLine => ({ line_number: 0, machine_id: null, work_id: null, hours: 0, machine_cost: 0, operator_labor: 0, unit: null })
 const form = ref<MachineryUsageReport>({ number: '', date: today, object_id: null, estimate_id: null, foreman_id: null, lines: [emptyLine()] })
 
 function addLine() { form.value.lines.push(emptyLine()) }
@@ -129,6 +133,8 @@ async function save() {
 async function post() { try { await postMachineryUsageReport(form.value.id!); form.value.is_posted = true } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
 async function unpost() { try { await unpostMachineryUsageReport(form.value.id!); form.value.is_posted = false } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
 onMounted(async () => { if (isEdit.value) { try { const r = await getMachineryUsageReport(+(props.id || route.params.id)); form.value = r.data } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } } })
+
+async function reload() { if (isEdit.value) { try { const r = await getMachineryUsageReport(+(props.id || route.params.id)); form.value = r.data } catch {} } }
 </script>
 <style scoped>
 .doc-header-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }

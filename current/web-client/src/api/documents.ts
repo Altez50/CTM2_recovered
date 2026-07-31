@@ -72,6 +72,40 @@ export function copyEstimate(id: number) {
   })
 }
 
+// ── Estimate text import / export (TSV / JSON / XLSX) ──────────────────────
+
+export interface EstimateImportResult {
+  imported: number
+  warnings?: string[]
+  format: string
+}
+
+export function importEstimateText(
+  id: number,
+  format: 'tsv' | 'json' | 'xlsx',
+  body: string | ArrayBuffer,
+  replace = true,
+): Promise<ApiResponse<EstimateImportResult>> {
+  const isBinary = format === 'xlsx' && typeof body !== 'string'
+  const headers: Record<string, string> = isBinary
+    ? { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+    : format === 'json'
+      ? { 'Content-Type': 'application/json' }
+      : { 'Content-Type': 'text/tab-separated-values; charset=utf-8' }
+  const qs = new URLSearchParams({ format, replace: String(replace) })
+  return apiRequest<ApiResponse<EstimateImportResult>>(
+    `/api/documents/estimates/${id}/import-text?${qs}`,
+    { method: 'POST', headers, body: body as BodyInit },
+  )
+}
+
+export function exportEstimateText(
+  id: number,
+  format: 'tsv' | 'json' | 'xlsx',
+): Promise<Blob> {
+  return downloadRequest(`/api/documents/estimates/${id}/export-text?format=${format}`)
+}
+
 export function listDailyReports(params: ListParams = {}) {
   return apiRequest<ApiResponse<DailyReport[]>>(`/api/documents/daily-reports${toQuery(params)}`)
 }

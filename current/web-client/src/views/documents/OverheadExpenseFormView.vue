@@ -9,7 +9,8 @@
       </div>
       <div class="toolbar" style="margin-top: 1rem">
         <button class="button button-secondary" @click="addLine" :disabled="form.is_distributed">+ Строка</button>
-        <button class="button button-primary" title="Сохранить" @click="save">💾</button>
+        <button class="button button-secondary" :disabled="!isEdit || form.is_distributed" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
+        <button class="button button-primary" title="Сохранить" :disabled="form.is_distributed || saving" @click="save">💾</button>
         <span v-if="form.id" :class="['status-pill', form.is_distributed ? 'posted' : 'draft']">{{ form.is_distributed ? 'Распределены' : 'Не распределены' }}</span>
       </div>
       <table class="line-table" style="margin-top: 1rem" v-if="form.lines.length">
@@ -26,12 +27,13 @@
         </tbody>
       </table>
     </div></section>
+    <DocumentDataExchangeDialog v-if="form.id" :open="dataExchangeOpen" kind="overhead-expenses" :doc-id="form.id" title="Накладные расходы" @close="dataExchangeOpen = false" @imported="reload" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute, onBeforeRouteLeave, type NavigationGuard } from 'vue-router'
 import FormField from '../../components/common/FormField.vue'
 import EntityPicker from '../../components/common/EntityPicker.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
@@ -44,9 +46,15 @@ const props = defineProps<{ tabId?: string; id?: string }>()
 const router = useRouter(); const route = useRoute()
 const isEdit = computed(() => !!(props.id || route.params.id))
 useHeaderBar(props.tabId, computed(() => isEdit.value ? 'Накладные расходы' : 'Новые накладные расходы'), ref([]))
-const error = ref(''); const today = new Date().toISOString().slice(0, 10); const thisMonth = today.slice(0, 7)
+const error = ref(''); const dataExchangeOpen = ref(false); const today = new Date().toISOString().slice(0, 10); const thisMonth = today.slice(0, 7)
+const saving = ref(false)
 const emptyLine = (): OverheadExpenseLine => ({ line_number: 0, cost_element_id: null, counterparty_id: null, sum: 0, description: '' })
 const form = ref<OverheadExpense>({ number: '', date: today, period: thisMonth, lines: [emptyLine()] })
+
+// Dirty-flag tracking
+const savedSnapshot = ref('')
+const isDirty = computed(() => JSON.stringify(form.value) !== savedSnapshot.value)
+function markSaved() { savedSnapshot.value = JSON.stringify(form.value) }
 
 function addLine() { form.value.lines.push(emptyLine()) }
 
@@ -70,13 +78,22 @@ async function loadCounterpartyPage(params: { search: string; page: number; page
 
 async function save() {
   error.value = ''
+  saving.value = true
   try {
     const payload = { ...form.value, lines: form.value.lines.map((l, i) => ({ ...l, line_number: i + 1 })) }
     const r = isEdit.value ? await updateOverheadExpense(+(props.id || route.params.id), payload) : await createOverheadExpense(payload)
-    if (!isEdit.value) router.push(`/documents/overhead-expenses/${r.data.id}`); else form.value = r.data
-  } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка сохранения' }
+    if (!isEdit.value) { form.value = r.data; markSaved(); router.push(`/documents/overhead-expenses/${r.data.id}`) } else { form.value = r.data; markSaved() }
+  } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка сохранения' } finally { saving.value = false }
 }
-onMounted(async () => { if (isEdit.value) { try { const r = await getOverheadExpense(+(props.id || route.params.id)); form.value = r.data } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } } })
+
+onBeforeRouteLeave((() => {
+  if (isDirty.value && !window.confirm('Есть несохранённые изменения. Покинуть страницу?')) return false
+  return true
+}) as NavigationGuard)
+
+onMounted(async () => { if (isEdit.value) { try { const r = await getOverheadExpense(+(props.id || route.params.id)); form.value = r.data; markSaved() } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } } else { markSaved() } })
+
+async function reload() { if (isEdit.value) { try { const r = await getOverheadExpense(+(props.id || route.params.id)); form.value = r.data; markSaved() } catch {} } }
 </script>
 <style scoped>
 .doc-header-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }

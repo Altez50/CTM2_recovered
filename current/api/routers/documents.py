@@ -3,12 +3,13 @@ from __future__ import annotations
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from fastapi.responses import Response
 
 from api.auth_dependencies import get_current_user, get_db
 from api.models.auth import UserInfo
 from api.models.common import ApiMessage, ApiResponse
+from api.text_import_export import export_document, import_document_lines
 from api.models.documents import (
     DailyReportCreate,
     DailyReportUpdate,
@@ -437,6 +438,62 @@ def copy_estimate_document(
     return ApiResponse(
         data=copy_estimate(connection, estimate_id=estimate_id),
         message="Estimate copied",
+    )
+
+
+# ── Estimate text import / export (TSV / JSON / XLSX) ──────────────────────
+
+
+@router.post("/estimates/{estimate_id}/import-text", response_model=ApiResponse)
+async def import_estimate_text(
+    estimate_id: int,
+    request: Request,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    format: str = Query("tsv", description="tsv | json | xlsx"),
+    replace: bool = Query(True, description="Replace existing lines"),
+) -> ApiResponse:
+    """Import tabular lines for an estimate from TSV / JSON / XLSX.
+
+    Missing works and units are created automatically. Group rows
+    (is_group=1) are imported as-is.
+    """
+    raw = await request.body()
+    if format == "xlsx":
+        data: bytes | str = raw
+    elif isinstance(raw, (bytes, bytearray)):
+        data = bytes(raw).decode("utf-8", errors="replace")
+    else:
+        data = raw or ""
+
+    result = import_document_lines(
+        connection, "estimate", estimate_id, fmt=format, data=data, replace=replace
+    )
+    return ApiResponse(
+        data=result, message=f"Imported {result.get('imported', 0)} lines"
+    )
+
+
+@router.get("/estimates/{estimate_id}/export-text")
+def export_estimate_text(
+    estimate_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    format: str = Query("tsv", description="tsv | json | xlsx"),
+) -> Response:
+    """Export an estimate's tabular lines to TSV / JSON / XLSX."""
+    result = export_document(connection, "estimate", estimate_id, fmt=format)
+    body = result["body"]
+    if isinstance(body, str):
+        body_bytes = body.encode("utf-8")
+    else:
+        body_bytes = body
+    return Response(
+        content=body_bytes,
+        media_type=result["media_type"],
+        headers={
+            "Content-Disposition": f'attachment; filename="{result["filename"]}"'
+        },
     )
 
 

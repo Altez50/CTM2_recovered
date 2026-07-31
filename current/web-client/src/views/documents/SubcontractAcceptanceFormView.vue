@@ -34,18 +34,20 @@
       </div>
       <div class="toolbar" style="margin-top: 1rem">
         <button class="button button-secondary" @click="addLine" :disabled="form.is_posted">+ Строка</button>
+        <button class="button button-secondary" :disabled="!isEdit || form.is_posted" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
         <button class="button button-primary" title="Сохранить" @click="save">💾</button>
         <button v-if="isEdit && !form.is_posted" class="button button-success" title="Провести" @click="post">✓</button>
         <button v-if="isEdit && form.is_posted" class="button button-warning" title="Отменить проведение" @click="unpost">↺</button>
         <span v-if="form.id" :class="['status-pill', form.is_posted ? 'posted' : 'draft']">{{ form.is_posted ? 'Проведен' : 'Черновик' }}</span>
       </div>
       <table class="line-table" style="margin-top: 1rem" v-if="form.lines.length">
-        <thead><tr><th>№</th><th>Работа</th><th>Субподрядчик</th><th class="num">Сумма</th><th>Описание</th><th></th></tr></thead>
+        <thead><tr><th>№</th><th>Работа</th><th>Субподрядчик</th><th>Ед.</th><th class="num">Сумма</th><th>Описание</th><th></th></tr></thead>
         <tbody>
           <tr v-for="(line, i) in form.lines" :key="i">
             <td>{{ i + 1 }}</td>
-            <td class="picker-cell"><WorkPicker :model-value="line.work_id ?? null" :selected-label="line.work_name ?? null" compact @update:model-value="(v) => { line.work_id = v }" @change="(w) => { line.work_name = w?.name ?? null }" /></td>
+            <td class="picker-cell"><WorkPicker :model-value="line.work_id ?? null" :selected-label="line.work_name ?? null" compact @update:model-value="(v) => { line.work_id = v }" @change="(w) => { line.work_name = w?.name ?? null; if (w?.unit) line.unit = w.unit }" /></td>
             <td class="picker-cell"><EntityPicker :model-value="line.counterparty_id ?? null" :selected-label="line.counterparty_name ?? null" title="Выбор субподрядчика" placeholder="Выберите" search-placeholder="Поиск…" empty-text="Не найдено" size="compact" :disabled="form.is_posted" :load-page="loadCounterpartyPage" @update:model-value="(v) => { line.counterparty_id = v }" @change="(item) => { line.counterparty_name = item?.label ?? null }" /></td>
+            <td><input v-model="line.unit" class="input input-sm" placeholder="ед." :disabled="form.is_posted" /></td>
             <td><input v-model.number="line.sum" class="input input-sm" type="number" step="0.01" :disabled="form.is_posted" /></td>
             <td><input v-model="line.description" class="input input-sm" :disabled="form.is_posted" /></td>
             <td><button class="button button-secondary button-sm" @click="form.lines.splice(i, 1)" :disabled="form.is_posted">✕</button></td>
@@ -53,6 +55,7 @@
         </tbody>
       </table>
     </div></section>
+    <DocumentDataExchangeDialog v-if="form.id" :open="dataExchangeOpen" kind="subcontract-acceptances" :doc-id="form.id" title="Субподряд" @close="dataExchangeOpen = false" @imported="reload" />
   </div>
 </template>
 
@@ -62,6 +65,7 @@ import { useRouter, useRoute } from 'vue-router'
 import FormField from '../../components/common/FormField.vue'
 import EntityPicker from '../../components/common/EntityPicker.vue'
 import WorkPicker from '../../components/common/WorkPicker.vue'
+import DocumentDataExchangeDialog from '../../components/documents/DocumentDataExchangeDialog.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import type { SubcontractAcceptance, SubcontractAcceptanceLine } from '../../types/costAccounting'
 import { getSubcontractAcceptance, createSubcontractAcceptance, updateSubcontractAcceptance, postSubcontractAcceptance, unpostSubcontractAcceptance } from '../../api/costAccounting'
@@ -74,8 +78,10 @@ const props = defineProps<{ tabId?: string; id?: string }>()
 const router = useRouter(); const route = useRoute()
 const isEdit = computed(() => !!(props.id || route.params.id))
 useHeaderBar(props.tabId, computed(() => isEdit.value ? 'Акт субподряда' : 'Новый акт субподряда'), ref([]))
-const error = ref(''); const today = new Date().toISOString().slice(0, 10)
-const emptyLine = (): SubcontractAcceptanceLine => ({ line_number: 0, work_id: null, counterparty_id: null, sum: 0, description: '' })
+const error = ref('')
+const dataExchangeOpen = ref(false)
+const today = new Date().toISOString().slice(0, 10)
+const emptyLine = (): SubcontractAcceptanceLine => ({ line_number: 0, work_id: null, counterparty_id: null, sum: 0, description: '', unit: null })
 const form = ref<SubcontractAcceptance>({ number: '', date: today, object_id: null, estimate_id: null, lines: [emptyLine()] })
 
 function addLine() { form.value.lines.push(emptyLine()) }
@@ -105,6 +111,8 @@ async function save() {
 async function post() { try { await postSubcontractAcceptance(form.value.id!); form.value.is_posted = true } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
 async function unpost() { try { await unpostSubcontractAcceptance(form.value.id!); form.value.is_posted = false } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
 onMounted(async () => { if (isEdit.value) { try { const r = await getSubcontractAcceptance(+(props.id || route.params.id)); form.value = r.data } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } } })
+
+async function reload() { if (isEdit.value) { try { const r = await getSubcontractAcceptance(+(props.id || route.params.id)); form.value = r.data } catch {} } }
 </script>
 <style scoped>
 .doc-header-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }

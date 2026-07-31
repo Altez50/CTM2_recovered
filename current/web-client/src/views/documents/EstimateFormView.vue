@@ -97,6 +97,7 @@
           </button>
           <button class="button button-secondary" type="button" @click="addGroupLine">Добавить группу</button>
           <button class="button button-secondary" type="button" @click="addWorkLine">Добавить пустую работу</button>
+          <button v-if="isEdit" class="button button-secondary" type="button" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
           <span class="status-pill" :class="form.is_posted ? 'posted' : 'draft'">
             {{ form.is_posted ? 'Проведен' : 'Черновик' }}
           </span>
@@ -253,6 +254,7 @@
         <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
       </div>
     </section>
+    <EstimateDataExchangeDialog v-if="isEdit" :open="dataExchangeOpen" :doc-id="Number(props.id)" title="Смета" @close="dataExchangeOpen = false" @imported="loadDocument" />
   </div>
 </template>
 
@@ -263,6 +265,7 @@ import EntityPicker, { type PickerItem } from '../../components/common/EntityPic
 import FormField from '../../components/common/FormField.vue'
 import WorkPicker from '../../components/common/WorkPicker.vue'
 import EstimateWorkCatalog from '../../components/documents/EstimateWorkCatalog.vue'
+import EstimateDataExchangeDialog from '../../components/documents/EstimateDataExchangeDialog.vue'
 import { useDocumentDensity } from '../../composables/useDocumentDensity'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import { createEstimate, getEstimate, postEstimate, unpostEstimate, updateEstimate } from '../../api/documents'
@@ -349,6 +352,7 @@ const { isCompactMode } = useDocumentDensity()
 const saving = ref(false)
 const error = ref('')
 const catalogVisible = ref(true)
+const dataExchangeOpen = ref(false)
 const workspaceRef = ref<HTMLElement | null>(null)
 const linesShellRef = ref<HTMLElement | null>(null)
 const linesShellWidth = ref(0)

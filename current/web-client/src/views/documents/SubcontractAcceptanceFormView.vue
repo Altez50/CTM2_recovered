@@ -108,8 +108,8 @@ async function save() {
     if (!isEdit.value) router.push(`/documents/subcontract-acceptances/${r.data.id}`); else form.value = r.data
   } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка сохранения' }
 }
-async function post() { try { await postSubcontractAcceptance(form.value.id!); form.value.is_posted = true } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
-async function unpost() { try { await unpostSubcontractAcceptance(form.value.id!); form.value.is_posted = false } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
+async function post() { try { await postSubcontractAcceptance(form.value.id!); form.value.is_posted = true } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка проведения' } }
+async function unpost() { try { await unpostSubcontractAcceptance(form.value.id!); form.value.is_posted = false } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка отмены проведения' } }
 onMounted(async () => { if (isEdit.value) { try { const r = await getSubcontractAcceptance(+(props.id || route.params.id)); form.value = r.data } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } } })
 
 async function reload() { if (isEdit.value) { try { const r = await getSubcontractAcceptance(+(props.id || route.params.id)); form.value = r.data } catch {} } }

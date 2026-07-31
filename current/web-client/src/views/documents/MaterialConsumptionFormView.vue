@@ -71,7 +71,7 @@
         </tbody>
       </table>
     </div></section>
-    <DocumentDataExchangeDialog v-if="form.id" :open="dataExchangeOpen" kind="material-consumptions" :doc-id="form.id" title="Расход материалов" @close="dataExchangeOpen = false" />
+    <DocumentDataExchangeDialog v-if="form.id" :open="dataExchangeOpen" kind="material-consumptions" :doc-id="form.id" title="Расход материалов" @close="dataExchangeOpen = false" @imported="reload" />
   </div>
 </template>
 

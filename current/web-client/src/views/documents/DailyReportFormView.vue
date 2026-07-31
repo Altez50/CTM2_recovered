@@ -60,7 +60,7 @@
         <div class="toolbar">
           <button class="button button-secondary" type="button" @click="fillFromEstimate">Заполнить из сметы</button>
           <button class="button button-secondary" type="button" @click="addLine">Добавить строку</button>
-          <button v-if="isEdit" class="button button-secondary" type="button" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
+          <button v-if="isEdit" :disabled="form.is_posted" class="button button-secondary" type="button" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
           <label class="sum-toggle">
             <input v-model="showSumColumns" type="checkbox" />
             Суммовые колонки

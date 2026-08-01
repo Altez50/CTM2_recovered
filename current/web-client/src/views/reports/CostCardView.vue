@@ -16,7 +16,10 @@
             @change="(item) => { objectName = item?.label ?? null }"
           />
           <label class="input-label">Период</label>
-          <input v-model="period" class="input" type="month" style="width: 160px" />
+          <span class="input-label">С</span>
+          <input v-model="periodFrom" class="input" type="month" style="width: 150px" />
+          <span class="input-label">По</span>
+          <input v-model="periodTo" class="input" type="month" style="width: 150px" />
           <button class="button button-primary" @click="loadData">Сформировать</button>
         </div>
         <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
@@ -56,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import DataTable from '../../components/common/DataTable.vue'
 import EntityPicker from '../../components/common/EntityPicker.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
@@ -71,9 +74,10 @@ useHeaderBar(props.tabId, ref('Карточка себестоимости'), re
 const data = ref<CostCardResponse | null>(null)
 const loading = ref(false)
 const error = ref('')
-const objectId = ref<number | null>(1)
+const objectId = ref<number | null>(null)
 const objectName = ref<string | null>(null)
-const period = ref('')
+const periodFrom = ref('')
+const periodTo = ref('')
 
 const elementCols = [{ key: 'cost_element_name', label: 'Элемент' }, { key: 'planned_amount', label: 'План' }, { key: 'actual_amount', label: 'Факт' }, { key: 'deviation', label: 'Отклонение' }]
 const workCols = [{ key: 'work_name', label: 'Работа' }, { key: 'completed_quantity', label: 'Объём' }, { key: 'planned_cost', label: 'План' }, { key: 'actual_cost', label: 'Факт' }, { key: 'deviation', label: 'Отклонение' }, { key: 'contract_value', label: 'Выручка' }, { key: 'profit', label: 'Прибыль' }, { key: 'profitability_pct', label: 'Рент.%' }]
@@ -91,9 +95,12 @@ async function loadObjectPage(params: { search: string; page: number; pageSize: 
 
 async function loadData() {
   if (!objectId.value) { error.value = 'Укажите объект'; return }
+  if (periodFrom.value && periodTo.value && periodFrom.value > periodTo.value) {
+    error.value = 'Период «С» не может быть позже «По»'; return
+  }
   loading.value = true; error.value = ''
   try {
-    const r = await getCostCard(objectId.value, period.value || null)
+    const r = await getCostCard(objectId.value, periodFrom.value || null, periodTo.value || null)
     data.value = r.data
     if (r.data.object_name) objectName.value = r.data.object_name
   } catch (err) {
@@ -102,7 +109,6 @@ async function loadData() {
     loading.value = false
   }
 }
-onMounted(loadData)
 </script>
 
 <style scoped>

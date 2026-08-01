@@ -107,12 +107,14 @@ import {
 import { listReferences, createReference } from '../../api/references'
 import { useAuthStore } from '../../stores/auth'
 import { useHeaderBar } from '../../composables/useHeaderBar'
+import { useBasedOnPrefill } from '../../composables/useBasedOnPrefill'
 import type { HeaderAction } from '../../stores/headerBar'
 import type { ContractRecord, Counterparty, GoodsDocumentPayload, GoodsKind, GoodsLine, GoodsLineInput, MaterialRecord, ObjectRecord, OrganizationRecord } from '../../types/models'
 
 const props = withDefaults(defineProps<{ tabId?: string; id?: string; kind?: GoodsKind }>(), { kind: 'receipt' })
 const auth = useAuthStore()
 const router = useRouter()
+const { hasBasedOn, loadSource } = useBasedOnPrefill()
 
 const isReceipt = computed(() => props.kind === 'receipt')
 const basePath = computed(() => (isReceipt.value ? '/goods/receipts' : '/goods/issues'))
@@ -136,6 +138,9 @@ const form = reactive({
   responsible_id: null as number | null,
   description: '',
   auto_schedule: true,
+  based_on_type: null as string | null,
+  based_on_id: null as number | null,
+  based_on_number: null as string | null,
   lines: [] as GoodsLine[],
 })
 
@@ -234,6 +239,9 @@ function buildPayload(): GoodsDocumentPayload {
     object_id: form.object_id,
     description: form.description || null,
     auto_schedule: form.auto_schedule,
+    based_on_type: form.based_on_type ?? null,
+    based_on_id: form.based_on_id ?? null,
+    based_on_number: form.based_on_number ?? null,
     lines: form.lines.map<GoodsLineInput>((l, i) => ({
       id: l.id,
       uuid: l.uuid ?? null,
@@ -401,7 +409,25 @@ async function doExport() {
 
 onMounted(async () => {
   try {
-    if (props.id) await loadDocument(Number(props.id))
+    if (props.id) {
+      await loadDocument(Number(props.id))
+    } else if (hasBasedOn) {
+      const result = await loadSource()
+      if (result) {
+        const { source, meta } = result
+        if (source.organization_id) form.organization_id = source.organization_id
+        if (source.organization_name) orgLabel.value = source.organization_name
+        if (source.counterparty_id) form.counterparty_id = source.counterparty_id
+        if (source.counterparty_name) cpLabel.value = source.counterparty_name
+        if (source.contract_id) form.contract_id = source.contract_id
+        if (source.contract_number) contractLabel.value = source.contract_number
+        if (source.object_id) form.object_id = source.object_id
+        if (source.object_name) objectLabel.value = source.object_name
+        form.based_on_type = meta.based_on_type
+        form.based_on_id = meta.based_on_id
+        form.based_on_number = meta.based_on_number
+      }
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Ошибка загрузки'
   }

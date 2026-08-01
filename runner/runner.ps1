@@ -115,7 +115,7 @@ function Show-Menu {
     Write-Host '  5  Rebuild frontend (npm run build)'
     Write-Host '  6  Show server log (tail)'
     Write-Host '  7  Show frontend log (tail)'
-    Write-Host '  8  Deploy to prod (stub)'
+    Write-Host '  8  Deploy to prod (SSH + docker compose)'
     Write-Host '  9  Open browser: http://localhost:'"$ServerPort"
     Write-Host '  0  Exit'
     Write-Host '------------------------------------------------'
@@ -253,10 +253,14 @@ function Show-Tail {
     Write-Host '--- конец лога ---' -ForegroundColor Cyan
 }
 
-function Invoke-DeployStub {
-    Write-Host '[deploy] STUB — не реализовано (требует исследования).' -ForegroundColor Yellow
-    Write-Host '         Продуктив использует docker-compose из deploy/ на удалённом хосте (abitek.su).' -ForegroundColor DarkGray
-    Write-Host '         Нужно: доступ по SSH/копирование артефактов, секреты, сборка.' -ForegroundColor DarkGray
+function Invoke-Deploy {
+    $script = Join-Path $ScriptDir 'deploy-prod.ps1'
+    if (-not (Test-Path $script)) {
+        Write-Host "[!] Не найден: $script" -ForegroundColor Red
+        return
+    }
+    Write-Host '[+] Открываю консоль деплоя (SSH passphrase может быть запрошен) ...' -ForegroundColor Green
+    Start-Process -FilePath 'powershell' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$script`"" -Verb Open
 }
 
 function Open-Browser {
@@ -303,7 +307,7 @@ function Main {
             '5' { Invoke-Rebuild; Start-Sleep -Seconds 1 }
             '6' { Show-Tail $ServerLog; Read-Host 'Enter — назад' }
             '7' { Show-Tail $FrontendLog; Read-Host 'Enter — назад' }
-            '8' { Invoke-DeployStub; Read-Host 'Enter — назад' }
+            '8' { Invoke-Deploy; Read-Host 'Enter — назад' }
             '9' { Open-Browser; Start-Sleep -Milliseconds 500 }
             '0' { break }
             default { Write-Host '[?] Неизвестная команда' -ForegroundColor Yellow; Start-Sleep -Seconds 1 }

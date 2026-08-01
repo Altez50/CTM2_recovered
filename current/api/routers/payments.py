@@ -3,9 +3,10 @@ from __future__ import annotations
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from api.auth_dependencies import get_current_user, get_db, require_roles
+from api.list_query import parse_quick_filters
 from api.models.auth import UserInfo
 from api.models.common import ApiMessage, ApiResponse
 from api.models.payments import (
@@ -57,7 +58,11 @@ def list_schedules(
     object_id: int | None = None,
     contract_id: int | None = None,
     is_posted: bool | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
+    request: Request = None,
 ) -> ApiResponse:
+    filters = parse_quick_filters(request.query_params if request else None)
     items, pagination = list_payment_schedules(
         connection,
         page=page,
@@ -66,6 +71,9 @@ def list_schedules(
         object_id=object_id,
         contract_id=contract_id,
         is_posted=is_posted,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        filters=filters,
     )
     return ApiResponse(data=items, pagination=pagination)
 
@@ -218,7 +226,11 @@ def list_transactions(
     direction: str | None = None,
     counterparty_id: int | None = None,
     is_posted: bool | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
+    request: Request = None,
 ) -> ApiResponse:
+    filters = parse_quick_filters(request.query_params if request else None)
     items, pagination = list_payment_transactions(
         connection,
         page=page,
@@ -227,6 +239,9 @@ def list_transactions(
         direction=direction,
         counterparty_id=counterparty_id,
         is_posted=is_posted,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        filters=filters,
     )
     return ApiResponse(data=items, pagination=pagination)
 

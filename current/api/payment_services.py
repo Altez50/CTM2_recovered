@@ -23,6 +23,7 @@ from api.goods_services import (
 )
 from api.models.auth import UserInfo
 from api.models.common import Pagination
+from api.list_query import apply_quick_filters, order_by_clause
 
 
 def _now_iso() -> str:
@@ -78,6 +79,9 @@ def list_payment_schedules(
     object_id: int | None = None,
     contract_id: int | None = None,
     is_posted: bool | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], Pagination]:
     page, page_size = _normalize_page(page, page_size)
     where_parts = ["ps.marked_for_deletion = 0"]
@@ -94,7 +98,22 @@ def list_payment_schedules(
     if is_posted is not None:
         where_parts.append("ps.is_posted = ?")
         params.append(int(bool(is_posted)))
+    apply_quick_filters(
+        where_parts,
+        params,
+        filters,
+        {
+            "number": ("ps.number", "like"),
+            "date_from": ("ps.date_from", "eq"),
+            "is_posted": ("ps.is_posted", "eq"),
+            "object_name": ("o.name", "like"),
+            "contract_number": ("ct.number", "like"),
+        },
+    )
     where_sql = " AND ".join(where_parts)
+    order = order_by_clause(
+        sort_by, sort_order, {"id": "ps.id", "number": "ps.number", "date_from": "ps.date_from"}, "ps.date_from"
+    )
     total = connection.execute(
         f"""
         SELECT COUNT(*)
@@ -117,7 +136,7 @@ def list_payment_schedules(
         LEFT JOIN contracts ct ON ct.id = ps.contract_id
         LEFT JOIN persons p ON p.id = ps.responsible_id
         WHERE {where_sql}
-        ORDER BY ps.date_from DESC, ps.id DESC
+        {order}
         LIMIT ? OFFSET ?
         """,
         [*params, page_size, (page - 1) * page_size],
@@ -541,6 +560,9 @@ def list_payment_transactions(
     direction: str | None = None,
     counterparty_id: int | None = None,
     is_posted: bool | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], Pagination]:
     page, page_size = _normalize_page(page, page_size)
     where_parts = ["pt.marked_for_deletion = 0"]
@@ -557,7 +579,22 @@ def list_payment_transactions(
     if is_posted is not None:
         where_parts.append("pt.is_posted = ?")
         params.append(int(bool(is_posted)))
+    apply_quick_filters(
+        where_parts,
+        params,
+        filters,
+        {
+            "number": ("pt.number", "like"),
+            "date": ("pt.date", "eq"),
+            "direction": ("pt.direction", "eq"),
+            "is_posted": ("pt.is_posted", "eq"),
+            "counterparty_name": ("cp.name", "like"),
+        },
+    )
     where_sql = " AND ".join(where_parts)
+    order = order_by_clause(
+        sort_by, sort_order, {"id": "pt.id", "number": "pt.number", "date": "pt.date"}, "pt.date"
+    )
     total = connection.execute(
         f"""
         SELECT COUNT(*)
@@ -577,7 +614,7 @@ def list_payment_transactions(
         LEFT JOIN counterparties cp ON cp.id = pt.counterparty_id
         LEFT JOIN contracts ct ON ct.id = pt.contract_id
         WHERE {where_sql}
-        ORDER BY pt.date DESC, pt.id DESC
+        {order}
         LIMIT ? OFFSET ?
         """,
         [*params, page_size, (page - 1) * page_size],

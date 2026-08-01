@@ -286,6 +286,9 @@ export interface DailyReport {
   is_posted: boolean
   posted_at?: string | null
   marked_for_deletion?: boolean
+  based_on_type?: string | null
+  based_on_id?: number | null
+  based_on_number?: string | null
   lines: DailyReportLine[]
 }
 
@@ -317,6 +320,9 @@ export interface Timesheet {
   marked_for_deletion?: boolean
   total_hours: number
   total_amount: number
+  based_on_type?: string | null
+  based_on_id?: number | null
+  based_on_number?: string | null
   lines: TimesheetLine[]
 }
 
@@ -533,6 +539,9 @@ export interface PaymentSchedule {
   object_name?: string | null
   contract_number?: string | null
   responsible_name?: string | null
+  based_on_type?: string | null
+  based_on_id?: number | null
+  based_on_number?: string | null
   total_incoming: number
   total_outgoing: number
   lines: PaymentScheduleLine[]
@@ -562,6 +571,9 @@ export interface PaymentTransaction {
   counterparty_name?: string | null
   contract_number?: string | null
   linked_line_uuid?: string | null
+  based_on_type?: string | null
+  based_on_id?: number | null
+  based_on_number?: string | null
 }
 
 export interface PaymentRegisterItem {
@@ -657,6 +669,9 @@ export interface GoodsDocument {
   is_posted: boolean
   posted_at?: string | null
   marked_for_deletion: boolean
+  based_on_type?: string | null
+  based_on_id?: number | null
+  based_on_number?: string | null
   created_at?: string | null
   modified_at?: string | null
   updated_at?: string | null

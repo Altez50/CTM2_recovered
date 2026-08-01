@@ -6,20 +6,57 @@
         <table>
           <thead>
             <tr>
-              <th v-for="column in columns" :key="column.key">{{ column.label }}</th>
+              <th
+                v-for="column in visibleColumns"
+                :key="column.key"
+                :class="['th-head', { sortable: column.sortable, sorted: sort?.key === column.key }]"
+                :title="column.sortable ? 'Сортировка по колонке' : undefined"
+                @click="column.sortable ? onHeaderClick(column.key) : undefined"
+              >
+                <span class="th-label">{{ column.label }}</span>
+                <span v-if="column.sortable" class="th-arrow">
+                  {{ sort?.key === column.key ? (sort.order === 'asc' ? '▲' : sort.order === 'desc' ? '▼' : '↕') : '↕' }}
+                </span>
+              </th>
+            </tr>
+            <tr v-if="filterable" class="filter-row">
+              <th v-for="column in visibleColumns" :key="column.key">
+                <template v-if="column.filter">
+                  <select
+                    v-if="column.filter.type === 'select'"
+                    class="filter-input"
+                    :value="filterValues[column.key] ?? ''"
+                    @change="onFilterChange(column.key, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">{{ column.filter.placeholder ?? '—' }}</option>
+                    <option v-for="opt in column.filter.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </select>
+                  <input
+                    v-else
+                    class="filter-input"
+                    :type="column.filter.type"
+                    :placeholder="column.filter.placeholder ?? '…'"
+                    :value="filterValues[column.key] ?? ''"
+                    @input="onFilterChange(column.key, ($event.target as HTMLInputElement).value)"
+                  />
+                </template>
+              </th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="(row, index) in rows"
               :key="getRowKey(row)"
-              :class="{ 'row-selected': selectable && isSelected(row) }"
+              :class="{
+                'row-selected': selectable && isSelected(row),
+                'row-marked': isMarked(row),
+              }"
               :style="selectable ? 'cursor: pointer' : undefined"
               @click="handleRowClick($event, row, index)"
               @dblclick="handleRowDblClick($event, row)"
               @contextmenu.prevent="handleRowContextMenu($event, row)"
             >
-              <td v-for="column in columns" :key="column.key">
+              <td v-for="column in visibleColumns" :key="column.key">
                 <slot :name="`cell-${column.key}`" :row="row">
                   {{ row[column.key] }}
                 </slot>
@@ -34,12 +71,12 @@
           v-for="(row, index) in rows"
           :key="getRowKey(row)"
           class="panel mobile-card"
-          :class="{ 'row-selected': selectable && isSelected(row) }"
+          :class="{ 'row-selected': selectable && isSelected(row), 'row-marked': isMarked(row) }"
           @click="handleRowClick($event, row, index)"
           @dblclick="handleRowDblClick($event, row)"
           @contextmenu.prevent="handleRowContextMenu($event, row)"
         >
-          <div v-for="column in columns" :key="column.key" class="card-row">
+          <div v-for="column in visibleColumns" :key="column.key" class="card-row">
             <span class="card-label">{{ column.label }}</span>
             <div class="card-value">
               <slot :name="`cell-${column.key}`" :row="row">
@@ -55,11 +92,30 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
-interface Column {
+export interface FilterOption {
+  value: string
+  label: string
+}
+
+export interface ColumnFilter {
+  type: 'text' | 'number' | 'date' | 'month' | 'select'
+  placeholder?: string
+  options?: FilterOption[]
+}
+
+export interface Column {
   key: string
   label: string
+  sortable?: boolean
+  visible?: boolean
+  filter?: ColumnFilter
+}
+
+export interface SortState {
+  key: string | null
+  order: 'asc' | 'desc' | null
 }
 
 const props = withDefaults(
@@ -71,6 +127,10 @@ const props = withDefaults(
     rowKey?: string
     selectable?: boolean
     selectedIds?: string[]
+    sortable?: boolean
+    sort?: SortState
+    filterable?: boolean
+    filters?: Record<string, string>
   }>(),
   {
     loading: false,
@@ -78,6 +138,8 @@ const props = withDefaults(
     rowKey: 'id',
     selectable: false,
     selectedIds: () => [],
+    sortable: false,
+    filterable: false,
   },
 )
 
@@ -85,7 +147,15 @@ const emit = defineEmits<{
   'update:selectedIds': [ids: string[]]
   'row-dblclick': [row: Record<string, unknown>]
   'row-contextmenu': [row: Record<string, unknown>, event: MouseEvent]
+  'sort-change': [key: string]
+  'filter-change': [key: string, value: string]
 }>()
+
+const visibleColumns = computed(() => props.columns.filter((c) => c.visible !== false))
+
+// Локальное зеркало значений строки отбора (управляемое, чтобы input оставался
+// контролируемым при сбросе снаружи через пропс filters).
+const filterValues = computed<Record<string, string>>(() => ({ ...(props.filters ?? {}) }))
 
 const lastClickedIndex = ref<number | null>(null)
 
@@ -95,6 +165,18 @@ function getRowKey(row: Record<string, unknown>) {
 
 function isSelected(row: Record<string, unknown>) {
   return props.selectedIds.includes(getRowKey(row))
+}
+
+function isMarked(row: Record<string, unknown>) {
+  return !!(row as Record<string, unknown>).marked_for_deletion
+}
+
+function onHeaderClick(key: string) {
+  emit('sort-change', key)
+}
+
+function onFilterChange(key: string, value: string) {
+  emit('filter-change', key, value)
 }
 
 function isInteractiveElement(target: HTMLElement): boolean {
@@ -175,12 +257,62 @@ th {
   letter-spacing: 0.05em;
 }
 
+.th-head.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.th-head.sortable:hover {
+  color: var(--accent);
+}
+
+.th-head.sorted {
+  color: var(--accent);
+}
+
+.th-label {
+  vertical-align: middle;
+}
+
+.th-arrow {
+  margin-left: 0.35rem;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.filter-row th {
+  padding-top: 0;
+  padding-bottom: 0.6rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.filter-input {
+  width: 100%;
+  min-width: 5rem;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.82rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel, #fff);
+  color: var(--text);
+}
+
 tr.row-selected {
   background: rgba(178, 76, 45, 0.09);
 }
 
 tr.row-selected:hover {
   background: rgba(178, 76, 45, 0.15);
+}
+
+tr.row-marked td,
+.mobile-card.row-marked {
+  opacity: 0.6;
+}
+
+tr.row-marked td {
+  text-decoration: line-through;
 }
 
 .empty-state {

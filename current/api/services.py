@@ -19,6 +19,7 @@ from api.models.auth import UserInfo
 from api.models.common import Pagination
 from api.models.references import validate_reference_payload
 from api.printing import build_excel_xml, build_pdf
+from api.list_query import apply_quick_filters
 
 
 REFERENCE_CONFIG = {
@@ -336,6 +337,7 @@ def list_estimates(
     sort_by: str | None,
     sort_order: str,
     object_id: int | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], Pagination]:
     page, page_size = _normalize_page(page, page_size)
     sort_column = sort_by if sort_by in {"id", "number", "date", "total_sum"} else "date"
@@ -348,6 +350,18 @@ def list_estimates(
     if object_id:
         where_parts.append("e.object_id = ?")
         params.append(object_id)
+    apply_quick_filters(
+        where_parts,
+        params,
+        filters,
+        {
+            "number": ("e.number", "like"),
+            "date": ("e.date", "eq"),
+            "is_posted": ("e.is_posted", "eq"),
+            "customer_name": ("cp.name", "like"),
+            "object_name": ("o.name", "like"),
+        },
+    )
     where_sql = " AND ".join(where_parts)
     total = connection.execute(
         f"""
@@ -833,6 +847,7 @@ def list_daily_reports(
     search: str | None,
     sort_by: str | None,
     sort_order: str,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], Pagination]:
     page, page_size = _normalize_page(page, page_size)
     sort_column = sort_by if sort_by in {"id", "number", "date"} else "date"
@@ -845,6 +860,16 @@ def list_daily_reports(
     if user.role == "foreman" and user.person_id:
         where_parts.append("dr.foreman_id = ?")
         params.append(user.person_id)
+    apply_quick_filters(
+        where_parts,
+        params,
+        filters,
+        {
+            "number": ("dr.number", "like"),
+            "date": ("dr.date", "eq"),
+            "is_posted": ("dr.is_posted", "eq"),
+        },
+    )
     where_sql = " AND ".join(where_parts)
     total = connection.execute(
         f"""
@@ -2320,6 +2345,7 @@ def list_timesheets(
     estimate_id: int | None = None,
     month_year: str | None = None,
     is_posted: bool | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], Pagination]:
     page, page_size = _normalize_page(page, page_size)
     sort_column = sort_by if sort_by in {"id", "number", "date", "month_year"} else "date"
@@ -2346,6 +2372,17 @@ def list_timesheets(
             raise HTTPException(status_code=403, detail="Foreman account is not linked to a person")
         where_parts.append("t.foreman_id = ?")
         params.append(user.person_id)
+    apply_quick_filters(
+        where_parts,
+        params,
+        filters,
+        {
+            "number": ("t.number", "like"),
+            "month_year": ("t.month_year", "eq"),
+            "is_posted": ("t.is_posted", "eq"),
+            "object_name": ("o.name", "like"),
+        },
+    )
     where_sql = " AND ".join(where_parts)
     total = connection.execute(
         f"""

@@ -1287,6 +1287,28 @@ def _delete_database_files() -> None:
             candidate.unlink()
 
 
+_BASED_ON_TABLES = (
+    "daily_reports",
+    "timesheets",
+    "material_consumptions",
+    "machinery_usage_reports",
+    "payment_schedules",
+    "payment_transactions",
+    "goods_issues",
+)
+
+
+def _ensure_based_on_columns(connection: sqlite3.Connection) -> None:
+    """Единообразные реквизиты «Документ-основание» для документов-результатов
+    (см. DOCUMENT_LIST_SPEC.md, раздел 4.4 / 3.6). Колонки nullable — обратная совместимость."""
+    for table_name in _BASED_ON_TABLES:
+        if not _table_exists(connection, table_name):
+            continue
+        _ensure_column(connection, table_name, "based_on_type", "TEXT")
+        _ensure_column(connection, table_name, "based_on_id", "INTEGER")
+        _ensure_column(connection, table_name, "based_on_number", "TEXT")
+
+
 def ensure_runtime_schema(connection: sqlite3.Connection) -> None:
     for table_name in UUID_READY_TABLES:
         _ensure_sync_columns(connection, table_name)
@@ -1335,6 +1357,7 @@ def ensure_runtime_schema(connection: sqlite3.Connection) -> None:
         _ensure_column(connection, "contracts", "valid_until", "TEXT")
 
     _set_constant(connection, "schema.version", SYNC_SCHEMA_VERSION)
+    _ensure_based_on_columns(connection)
     seed_runtime_catalogs(connection)
     _seed_cost_accounting_catalogs(connection)
     ensure_local_sync_node(connection)

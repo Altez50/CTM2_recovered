@@ -84,6 +84,7 @@ import WorkPicker from '../../components/common/WorkPicker.vue'
 import DocumentDataExchangeDialog from '../../components/documents/DocumentDataExchangeDialog.vue'
 import type { PickerItem } from '../../components/common/EntityPicker.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
+import { useBasedOnPrefill } from '../../composables/useBasedOnPrefill'
 import type { MaterialConsumption, MaterialConsumptionLine } from '../../types/costAccounting'
 import { getMaterialConsumption, createMaterialConsumption, updateMaterialConsumption, postMaterialConsumption, unpostMaterialConsumption } from '../../api/costAccounting'
 import { listReferences } from '../../api/references'
@@ -94,6 +95,7 @@ import type { ObjectRecord, PersonRecord, MaterialRecord } from '../../types/mod
 const props = defineProps<{ tabId?: string; id?: string }>()
 const router = useRouter(); const route = useRoute()
 const isEdit = computed(() => !!props.id || !!route.params.id)
+const { hasBasedOn, loadSource } = useBasedOnPrefill()
 useHeaderBar(props.tabId, computed(() => isEdit.value ? 'Расход материалов' : 'Новый расход материалов'), ref([]))
 
 const error = ref('')
@@ -140,6 +142,19 @@ async function unpost() { try { await unpostMaterialConsumption(form.value.id!);
 
 onMounted(async () => {
   if (isEdit.value) { try { const r = await getMaterialConsumption(+(props.id || route.params.id)); form.value = r.data } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } }
+  else if (hasBasedOn) {
+    const result = await loadSource()
+    if (result) {
+      const { source, meta } = result
+      if (source.object_id) form.value.object_id = source.object_id
+      if (source.object_name) form.value.object_name = source.object_name
+      if (source.estimate_id) form.value.estimate_id = source.estimate_id
+      if (source.estimate_number) form.value.estimate_number = source.estimate_number
+      form.value.based_on_type = meta.based_on_type
+      form.value.based_on_id = meta.based_on_id
+      form.value.based_on_number = meta.based_on_number
+    }
+  }
 })
 
 async function reload() {

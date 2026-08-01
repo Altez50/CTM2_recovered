@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 
 from api.auth_dependencies import get_current_user, get_db, require_roles
+from api.list_query import parse_quick_filters
 from api.text_import_export import export_document, import_document_lines
 from api.cost_accounting_services import (
     calculate_cost,
@@ -166,9 +167,14 @@ def list_mc_documents(
     page_size: int = Query(default=20, ge=1, le=50),
     search: str | None = None,
     object_id: int | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
+    request: Request = None,
 ) -> ApiResponse:
+    filters = parse_quick_filters(request.query_params if request else None)
     items, pagination = list_material_consumptions(
-        connection, page=page, page_size=page_size, search=search, object_id=object_id
+        connection, page=page, page_size=page_size, search=search, object_id=object_id,
+        sort_by=sort_by, sort_order=sort_order, filters=filters,
     )
     return ApiResponse(data=items, pagination=pagination)
 
@@ -255,9 +261,14 @@ def list_mur_documents(
     page_size: int = Query(default=20, ge=1, le=50),
     search: str | None = None,
     object_id: int | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
+    request: Request = None,
 ) -> ApiResponse:
+    filters = parse_quick_filters(request.query_params if request else None)
     items, pagination = list_machinery_usage_reports(
-        connection, page=page, page_size=page_size, search=search, object_id=object_id
+        connection, page=page, page_size=page_size, search=search, object_id=object_id,
+        sort_by=sort_by, sort_order=sort_order, filters=filters,
     )
     return ApiResponse(data=items, pagination=pagination)
 
@@ -337,9 +348,14 @@ def list_sa_documents(
     page_size: int = Query(default=20, ge=1, le=50),
     search: str | None = None,
     object_id: int | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
+    request: Request = None,
 ) -> ApiResponse:
+    filters = parse_quick_filters(request.query_params if request else None)
     items, pagination = list_subcontract_acceptances(
-        connection, page=page, page_size=page_size, search=search, object_id=object_id
+        connection, page=page, page_size=page_size, search=search, object_id=object_id,
+        sort_by=sort_by, sort_order=sort_order, filters=filters,
     )
     return ApiResponse(data=items, pagination=pagination)
 
@@ -419,9 +435,14 @@ def list_oe_documents(
     page_size: int = Query(default=20, ge=1, le=50),
     search: str | None = None,
     period: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
+    request: Request = None,
 ) -> ApiResponse:
+    filters = parse_quick_filters(request.query_params if request else None)
     items, pagination = list_overhead_expenses(
-        connection, page=page, page_size=page_size, search=search, period=period
+        connection, page=page, page_size=page_size, search=search, period=period,
+        sort_by=sort_by, sort_order=sort_order, filters=filters,
     )
     return ApiResponse(data=items, pagination=pagination)
 
@@ -518,8 +539,15 @@ def list_cc_documents(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=50),
     search: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
+    request: Request = None,
 ) -> ApiResponse:
-    items, pagination = list_cost_calculations(connection, page=page, page_size=page_size, search=search)
+    filters = parse_quick_filters(request.query_params if request else None)
+    items, pagination = list_cost_calculations(
+        connection, page=page, page_size=page_size, search=search,
+        sort_by=sort_by, sort_order=sort_order, filters=filters,
+    )
     return ApiResponse(data=items, pagination=pagination)
 
 
@@ -605,19 +633,21 @@ def cost_card_report(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     object_id: int = Query(..., ge=1),
-    period: str | None = None,
+    period_from: str | None = Query(default=None, description="YYYY-MM"),
+    period_to: str | None = Query(default=None, description="YYYY-MM"),
 ) -> ApiResponse:
-    return ApiResponse(data=get_cost_card(connection, object_id, period=period))
+    return ApiResponse(data=get_cost_card(connection, object_id, period_from=period_from, period_to=period_to))
 
 
 @router.get("/reports/cost-turnover", response_model=ApiResponse)
 def cost_turnover_report(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
-    period: str = Query(..., description="YYYY-MM"),
+    period_from: str = Query(..., description="YYYY-MM"),
+    period_to: str = Query(..., description="YYYY-MM"),
     object_id: int = Query(default=0, ge=0),
 ) -> ApiResponse:
-    return ApiResponse(data=get_turnover_balance(connection, period, object_id=object_id))
+    return ApiResponse(data=get_turnover_balance(connection, period_from, period_to, object_id=object_id))
 
 
 @router.get("/reports/cost-deviations", response_model=ApiResponse)

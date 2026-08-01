@@ -3,9 +3,10 @@ from __future__ import annotations
 import sqlite3
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, File, Query, Response, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Query, Request, Response, UploadFile
 
 from api.auth_dependencies import get_current_user, get_db, require_roles
+from api.list_query import parse_quick_filters
 from api.import_profiles import delete_profile, list_profiles, save_profile
 from api.models.auth import UserInfo
 from api.models.common import ApiMessage, ApiResponse
@@ -56,7 +57,11 @@ def list_receipts(
     contract_id: int | None = None,
     object_id: int | None = None,
     is_posted: bool | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
+    request: Request = None,
 ) -> ApiResponse:
+    filters = parse_quick_filters(request.query_params if request else None)
     items, pagination = list_goods_receipts(
         connection,
         page=page,
@@ -67,6 +72,9 @@ def list_receipts(
         contract_id=contract_id,
         object_id=object_id,
         is_posted=is_posted,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        filters=filters,
     )
     return ApiResponse(data=items, pagination=pagination)
 
@@ -165,7 +173,11 @@ def list_issues(
     contract_id: int | None = None,
     object_id: int | None = None,
     is_posted: bool | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
+    request: Request = None,
 ) -> ApiResponse:
+    filters = parse_quick_filters(request.query_params if request else None)
     items, pagination = list_goods_issues(
         connection,
         page=page,
@@ -176,6 +188,9 @@ def list_issues(
         contract_id=contract_id,
         object_id=object_id,
         is_posted=is_posted,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        filters=filters,
     )
     return ApiResponse(data=items, pagination=pagination)
 

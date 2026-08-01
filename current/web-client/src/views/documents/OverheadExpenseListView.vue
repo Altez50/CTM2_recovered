@@ -2,106 +2,185 @@
   <div class="page-shell">
     <section class="panel">
       <div class="panel-body">
-        <div class="toolbar">
+        <div class="toolbar search-row">
           <input v-model="search" class="input toolbar-grow" type="search" placeholder="Поиск по номеру или периоду" />
-          <button class="button button-primary" @click="router.push('/documents/overhead-expenses/new')">Накладные расходы</button>
-          <button class="button button-secondary" title="Обновить" @click="loadItems">↻</button>
         </div>
-        <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
+
+        <ListCommandBar :state="state" :config="config" @open-settings="settingsOpen = true" />
 
         <div v-if="auth.canManageCost" class="toolbar distribution-bar">
           <span class="muted">Распределение за период:</span>
-          <input v-model="distPeriod" class="input input-period" type="text" placeholder="YYYY-MM" />
-          <select v-model.number="distBaseId" class="input">
+          <input v-model="distPeriod" class="input input-period" type="month" />
+          <select v-model="distBaseId" class="select">
             <option :value="0" disabled>База распределения…</option>
             <option v-for="b in allocationBases" :key="b.id" :value="b.id">{{ b.name }}</option>
           </select>
-          <button class="button button-success" :disabled="!distBaseId || distributing" @click="runDistribute">Распределить</button>
-          <button class="button button-warning" :disabled="distributing" @click="runCancelDistribution">Отменить распределение</button>
+          <button class="button button-success" type="button" :disabled="!distBaseId || distributing" @click="runDistribute">Распределить</button>
+          <button class="button button-warning" type="button" :disabled="distributing" @click="runCancelDistribution">Отменить распределение</button>
         </div>
 
-        <SelectionActionBar :selected-count="selectedIds.length" @deselect-all="selectedIds = []">
-          <button v-if="selectedIds.length === 1" class="button button-secondary" type="button" @click="openItem(Number(selectedIds[0]))">Открыть</button>
-          <button class="button button-danger" type="button" title="Удалить" @click="removeSelected">✕</button>
-        </SelectionActionBar>
+        <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
 
-        <DataTable :columns="columns" :rows="rows as any[]" :loading="loading" empty-text="Документов пока нет" selectable :selected-ids="selectedIds" @update:selected-ids="selectedIds = $event" @row-dblclick="handleRowDblClick" @row-contextmenu="onContextMenu as any">
-          <template #cell-number="{ row }"><RouterLink class="document-list-link" :to="`/documents/overhead-expenses/${row.id}`"><strong>{{ row.number }}</strong></RouterLink></template>
-          <template #cell-date="{ row }">{{ formatDate(row.date) }}</template>
-          <template #cell-is_distributed="{ row }"><span :class="['status-pill', row.is_distributed ? 'posted' : 'draft']">{{ row.is_distributed ? 'Распределены' : 'Не распределены' }}</span></template>
+        <DataTable
+          :columns="effectiveColumns"
+          :rows="rows as Record<string, unknown>[]"
+          :loading="loading"
+          empty-text="Документов пока нет"
+          selectable
+          :selected-ids="selectedIds"
+          sortable
+          :sort="sort"
+          :filterable="filterRowVisible"
+          :filters="filters"
+          @update:selected-ids="selectedIds = $event"
+          @row-dblclick="handleRowDblClick"
+          @row-contextmenu="(row, ev) => ctx.onContextMenu(row as DocListRow, ev)"
+          @sort-change="onSortChange"
+          @filter-change="onFilterChange"
+        >
+          <template #cell-number="{ row }">
+            <RouterLink class="document-list-link" :to="`/documents/overhead-expenses/${(row as DocListRow).id}`">
+              <strong>{{ (row as DocListRow).number }}</strong>
+            </RouterLink>
+          </template>
+          <template #cell-date="{ row }">{{ formatDate((row as DocListRow).date as string) }}</template>
+          <template #cell-is_distributed="{ row }">
+            <span :class="['status-pill', (row as DocListRow).is_distributed ? 'posted' : 'draft']">
+              {{ (row as DocListRow).is_distributed ? 'Распределены' : 'Не распределены' }}
+            </span>
+          </template>
         </DataTable>
 
         <div class="toolbar pagination-row">
           <span class="muted">Страница {{ pagination.page }} из {{ pagination.pages }}. Всего: {{ pagination.total }}</span>
-          <div class="table-actions"><button class="button button-secondary" :disabled="page <= 1" @click="page -= 1">Назад</button><button class="button button-secondary" :disabled="page >= pagination.pages" @click="page += 1">Вперед</button></div>
+          <div class="table-actions">
+            <button class="button button-secondary" type="button" :disabled="page <= 1" @click="page -= 1">Назад</button>
+            <button class="button button-secondary" type="button" :disabled="page >= pagination.pages" @click="page += 1">Вперёд</button>
+          </div>
         </div>
       </div>
     </section>
-    <ContextMenu :open="menuOpen" :items="menuItems" :x="menuX" :y="menuY" @close="closeMenu" @select="onMenuSelect" />
+
+    <ListSettingsDialog
+      :open="settingsOpen"
+      :columns="config.columns"
+      :states="settingsStates"
+      @close="settingsOpen = false"
+      @apply="onApplyColumns"
+      @reset="onResetColumns"
+    />
+    <ContextMenu
+      :open="ctx.menuOpen.value"
+      :items="ctx.menuItems.value"
+      :x="ctx.menuX.value"
+      :y="ctx.menuY.value"
+      @close="ctx.closeMenu()"
+      @select="ctx.onSelect"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
 import DataTable from '../../components/common/DataTable.vue'
-import SelectionActionBar from '../../components/common/SelectionActionBar.vue'
-import { useAuthStore } from '../../stores/auth'
-import { useHeaderBar } from '../../composables/useHeaderBar'
-import type { HeaderAction } from '../../stores/headerBar'
 import ContextMenu from '../../components/common/ContextMenu.vue'
-import { useDocumentContextMenu } from '../../composables/useDocumentContextMenu'
-import type { OverheadExpense, AllocationBase } from '../../types/costAccounting'
-import { listOverheadExpenses, deleteOverheadExpense, restoreOverheadExpense, listAllocationBases, distributeOverhead, cancelOverheadDistribution } from '../../api/costAccounting'
+import ListCommandBar from '../../components/documents/ListCommandBar.vue'
+import ListSettingsDialog from '../../components/documents/ListSettingsDialog.vue'
+import { useHeaderBar } from '../../composables/useHeaderBar'
+import { useDocumentList } from '../../composables/useDocumentList'
+import { useDocumentListContextMenu } from '../../composables/useDocumentListContextMenu'
+import { overheadExpenseListConfig } from '../../config/documentLists'
+import { listAllocationBases, distributeOverhead, cancelOverheadDistribution } from '../../api/costAccounting'
+import { useAuthStore } from '../../stores/auth'
+import type { DocListRow } from '../../config/documentListTypes'
+import type { AllocationBase } from '../../types/costAccounting'
+import type { ColumnState } from '../../composables/useListSettings'
 
 const props = defineProps<{ tabId?: string }>()
-const auth = useAuthStore(); const router = useRouter()
-const headerActions = computed<HeaderAction[]>(() => [{ key: 'create', icon: '+', title: 'Накладные расходы', variant: 'primary', to: '/documents/overhead-expenses/new' }])
-useHeaderBar(props.tabId, computed(() => 'Накладные расходы'), headerActions)
+const config = overheadExpenseListConfig
+const state = useDocumentList(config)
+const ctx = useDocumentListContextMenu(config, state)
+const auth = useAuthStore()
 
-const rows = ref<OverheadExpense[]>([]); const loading = ref(false); const error = ref(''); const search = ref(''); const page = ref(1)
-const pagination = ref({ page: 1, pages: 1, total: 0 }); const selectedIds = ref<string[]>([]); let searchTimer = 0
-const columns = [{ key: 'number', label: 'Номер' }, { key: 'date', label: 'Дата' }, { key: 'period', label: 'Период' }, { key: 'is_distributed', label: 'Статус' }]
+useHeaderBar(props.tabId, computed(() => config.title), computed(() => []))
 
-// Distribution controls
+const {
+  rows, loading, error, search, page, pagination, selectedIds,
+  sort, filters, filterRowVisible, effectiveColumns,
+  onSortChange, onFilterChange,
+} = state
+
+const settingsOpen = ref(false)
+const settingsStates = computed<ColumnState[]>(() => {
+  const saved = state.settings.savedColumns.value
+  return saved ?? config.columns.map((c) => ({ key: c.key, visible: c.defaultVisible !== false }))
+})
+
+function onApplyColumns(states: ColumnState[]) {
+  void state.settings.saveColumns(states)
+}
+function onResetColumns() {
+  void state.settings.resetColumns()
+}
+
+function handleRowDblClick(row: Record<string, unknown>) {
+  state.openItem((row as DocListRow).id as number)
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return '—'
+  const [y, m, d] = value.split('-').map(Number)
+  if (!y || !m || !d) return value
+  return new Date(y, m - 1, d).toLocaleDateString('ru-RU')
+}
+
+// ── Распределение накладных расходов ───────────────────────────────────
 const allocationBases = ref<AllocationBase[]>([])
 const distPeriod = ref(new Date().toISOString().slice(0, 7))
 const distBaseId = ref(0)
 const distributing = ref(false)
 
-const { menuOpen, menuX, menuY, menuItems, onContextMenu, closeMenu, onMenuSelect } = useDocumentContextMenu<OverheadExpense>({
-  hasPost: false,
-  onDelete: async (row) => { await deleteOverheadExpense(Number(row.id)); await loadItems() },
-  onRestore: async (row) => { await restoreOverheadExpense(Number(row.id)); await loadItems() },
-})
-
-function formatDate(v: any) { if (!v) return '—'; const [y,m,d] = String(v).split('-').map(Number); return y && m && d ? new Date(y,m-1,d).toLocaleDateString('ru-RU') : v }
-function openItem(id: number) { router.push(`/documents/overhead-expenses/${id}`) }
-function handleRowDblClick(row: Record<string, unknown>) { router.push(`/documents/overhead-expenses/${(row as any).id}`) }
-
-async function loadItems() { loading.value = true; error.value = ''; try { const r = await listOverheadExpenses({ page: page.value, page_size: 20, search: search.value }); rows.value = r.data; pagination.value = { page: r.pagination?.page ?? 1, pages: r.pagination?.pages ?? 1, total: r.pagination?.total ?? 0 }; selectedIds.value = [] } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } finally { loading.value = false } }
-async function removeSelected() { if (!selectedIds.value.length) return; const label = selectedIds.value.length === 1 ? 'документ' : `${selectedIds.value.length} документов`; if (!window.confirm(`Пометить ${label} на удаление?`)) return; error.value = ''; let failed = 0; for (const id of selectedIds.value) { try { await deleteOverheadExpense(Number(id)) } catch { failed++ } }; await loadItems(); if (failed) error.value = `Не удалось удалить ${failed} документов` }
-
 async function runDistribute() {
   if (!distPeriod.value || !distBaseId.value) return
   if (!window.confirm(`Распределить накладные расходы за период ${distPeriod.value}?`)) return
-  distributing.value = true; error.value = ''
+  distributing.value = true
   try {
-    const res = await distributeOverhead({ period: distPeriod.value, allocation_base_id: distBaseId.value, object_id: 0 })
-    const d = (res as any).data
-    error.value = `Распределено: ${d?.total_distributed ?? 0} (записей: ${d?.record_count ?? 0})`
-    await loadItems()
-  } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка распределения' } finally { distributing.value = false }
+    await distributeOverhead({ period: distPeriod.value, allocation_base_id: distBaseId.value, object_id: 0 })
+    await state.loadItems()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Ошибка распределения'
+  } finally {
+    distributing.value = false
+  }
 }
+
 async function runCancelDistribution() {
   if (!distPeriod.value) return
   if (!window.confirm(`Отменить распределение за период ${distPeriod.value}?`)) return
-  distributing.value = true; error.value = ''
-  try { await cancelOverheadDistribution(distPeriod.value); await loadItems() } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка отмены' } finally { distributing.value = false }
+  distributing.value = true
+  try {
+    await cancelOverheadDistribution(distPeriod.value)
+    await state.loadItems()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Ошибка отмены'
+  } finally {
+    distributing.value = false
+  }
 }
 
-async function loadBases() { try { const r = await listAllocationBases(); allocationBases.value = r.data } catch { /* ignore */ } }
-
-watch(page, loadItems); watch(search, () => { clearTimeout(searchTimer); searchTimer = window.setTimeout(() => { page.value = 1; loadItems() }, 300) }); onMounted(async () => { await loadBases(); await loadItems() })
+onMounted(async () => {
+  try {
+    const r = await listAllocationBases()
+    allocationBases.value = r.data ?? []
+  } catch {
+    /* ignore */
+  }
+})
 </script>
-<style scoped>.pagination-row { justify-content: space-between; margin-top: 1rem; } .distribution-bar { margin: 0.5rem 0; gap: 0.5rem; flex-wrap: wrap; } .input-period { width: 110px; }</style>
+
+<style scoped>
+.search-row { margin-bottom: 0.75rem; }
+.distribution-bar { margin: 0.5rem 0 0.75rem; gap: 0.5rem; flex-wrap: wrap; }
+.input-period { width: 150px; }
+.pagination-row { justify-content: space-between; margin-top: 1rem; }
+</style>

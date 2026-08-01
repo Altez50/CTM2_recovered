@@ -126,12 +126,14 @@ import {
 import { listReferences } from '../../api/references'
 import { useAuthStore } from '../../stores/auth'
 import { useHeaderBar } from '../../composables/useHeaderBar'
+import { useBasedOnPrefill } from '../../composables/useBasedOnPrefill'
 import type { HeaderAction } from '../../stores/headerBar'
 import type { ContractRecord, Counterparty, ObjectRecord, PaymentSchedule, PaymentScheduleLine, PersonRecord } from '../../types/models'
 
 const props = defineProps<{ tabId?: string; id?: string }>()
 const auth = useAuthStore()
 const router = useRouter()
+const { hasBasedOn, loadSource } = useBasedOnPrefill()
 
 const isPosted = ref(false)
 const loading = ref(false)
@@ -151,6 +153,9 @@ const form = reactive({
   object_id: '' as number | '',
   contract_id: '' as number | '',
   responsible_id: '' as number | '',
+  based_on_type: null as string | null,
+  based_on_id: null as number | null,
+  based_on_number: '' as string | null,
   lines: [] as PaymentScheduleLine[],
 })
 
@@ -233,6 +238,9 @@ function buildPayload() {
     object_id: form.object_id || null,
     contract_id: form.contract_id || null,
     responsible_id: form.responsible_id || null,
+    based_on_type: form.based_on_type || null,
+    based_on_id: form.based_on_id || null,
+    based_on_number: form.based_on_number || null,
     lines: form.lines.map((l, i) => ({
       line_number: i + 1,
       direction: l.direction,
@@ -427,6 +435,17 @@ onMounted(async () => {
     await loadOptions()
     if (props.id) {
       await loadSchedule(Number(props.id))
+    } else if (hasBasedOn) {
+      const result = await loadSource()
+      if (result) {
+        const { source, meta } = result
+        if (source.object_id) form.object_id = source.object_id
+        if (source.contract_id) form.contract_id = source.contract_id
+        if (source.responsible_id) form.responsible_id = source.responsible_id
+        form.based_on_type = meta.based_on_type
+        form.based_on_id = meta.based_on_id
+        form.based_on_number = meta.based_on_number
+      }
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Ошибка загрузки'

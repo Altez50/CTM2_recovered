@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from fastapi.responses import Response
 
 from api.auth_dependencies import get_current_user, get_db
+from api.list_query import parse_quick_filters
 from api.models.auth import UserInfo
 from api.models.common import ApiMessage, ApiResponse
 from api.text_import_export import export_document, import_document_lines
@@ -67,7 +68,9 @@ def list_estimate_documents(
     sort_by: str | None = None,
     sort_order: str = "desc",
     object_id: int | None = None,
+    request: Request = None,
 ) -> ApiResponse:
+    filters = parse_quick_filters(request.query_params if request else None)
     items, pagination = list_estimates(
         connection,
         page=page,
@@ -76,6 +79,7 @@ def list_estimate_documents(
         sort_by=sort_by,
         sort_order=sort_order,
         object_id=object_id,
+        filters=filters,
     )
     return ApiResponse(data=items, pagination=pagination)
 
@@ -192,7 +196,9 @@ def list_daily_report_documents(
     search: str | None = None,
     sort_by: str | None = None,
     sort_order: str = "desc",
+    request: Request = None,
 ) -> ApiResponse:
+    filters = parse_quick_filters(request.query_params if request else None)
     items, pagination = list_daily_reports(
         connection,
         user=current_user,
@@ -201,6 +207,7 @@ def list_daily_report_documents(
         search=search,
         sort_by=sort_by,
         sort_order=sort_order,
+        filters=filters,
     )
     return ApiResponse(data=items, pagination=pagination)
 
@@ -324,7 +331,9 @@ def list_timesheet_documents(
     estimate_id: int | None = None,
     month_year: str | None = None,
     is_posted: bool | None = None,
+    request: Request = None,
 ) -> ApiResponse:
+    filters = parse_quick_filters(request.query_params if request else None)
     items, pagination = list_timesheets(
         connection,
         user=current_user,
@@ -337,6 +346,7 @@ def list_timesheet_documents(
         estimate_id=estimate_id,
         month_year=month_year,
         is_posted=is_posted,
+        filters=filters,
     )
     return ApiResponse(data=items, pagination=pagination)
 

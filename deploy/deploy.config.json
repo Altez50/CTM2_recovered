@@ -1,0 +1,9 @@
+{
+  "host": "abitek.su",
+  "port": 22,
+  "user": "root",
+  "ssh_key": "~/.ssh/id_rsa",
+  "remote_current": "/srv/ctm/current",
+  "remote_deploy": "/srv/ctm/deploy",
+  "prod_url": "https://abitek.su:18443/ctm/"
+}

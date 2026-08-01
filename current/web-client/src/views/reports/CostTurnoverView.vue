@@ -4,7 +4,10 @@
       <div class="panel-body">
         <div class="toolbar">
           <label class="input-label">Период</label>
-          <input v-model="period" class="input" type="month" style="width: 160px" />
+          <span class="input-label">С</span>
+          <input v-model="periodFrom" class="input" type="month" style="width: 150px" />
+          <span class="input-label">По</span>
+          <input v-model="periodTo" class="input" type="month" style="width: 150px" />
           <span class="input-label">Объект</span>
           <EntityPicker
             :model-value="objectId || null"
@@ -48,7 +51,8 @@ useHeaderBar(props.tabId, ref('Оборотно-сальдовая ведомо�
 const rows = ref<TurnoverRow[]>([])
 const loading = ref(false)
 const error = ref('')
-const period = ref('')
+const periodFrom = ref('')
+const periodTo = ref('')
 const objectId = ref(0)
 const objectName = ref<string | null>(null)
 
@@ -66,10 +70,12 @@ async function loadObjectPage(params: { search: string; page: number; pageSize: 
 }
 
 async function loadData() {
-  if (!period.value) { error.value = 'Укажите период'; return }
+  if (!periodFrom.value) { error.value = 'Укажите период «С»'; return }
+  if (!periodTo.value) { error.value = 'Укажите период «По»'; return }
+  if (periodFrom.value > periodTo.value) { error.value = 'Период «С» не может быть позже «По»'; return }
   loading.value = true; error.value = ''
   try {
-    const r = await getCostTurnover(period.value, objectId.value)
+    const r = await getCostTurnover(periodFrom.value, periodTo.value, objectId.value)
     rows.value = r.data.rows
     objectName.value = r.data.object_name
   } catch (err) {
@@ -80,8 +86,9 @@ async function loadData() {
 }
 
 onMounted(() => {
-  period.value = new Date().toISOString().slice(0, 7)
-  loadData()
+  const cur = new Date().toISOString().slice(0, 7)
+  periodFrom.value = cur
+  periodTo.value = cur
 })
 </script>
 

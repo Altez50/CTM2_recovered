@@ -263,6 +263,7 @@ const router = createRouter({
           path: 'goods/receipts',
           name: 'goods-receipt-list',
           component: () => import('../views/goods/GoodsDocumentListView.vue'),
+          props: { kind: 'receipt' },
         },
         {
           path: 'goods/receipts/new',
@@ -281,6 +282,7 @@ const router = createRouter({
           path: 'goods/issues',
           name: 'goods-issue-list',
           component: () => import('../views/goods/GoodsDocumentListView.vue'),
+          props: { kind: 'issue' },
         },
         {
           path: 'goods/issues/new',

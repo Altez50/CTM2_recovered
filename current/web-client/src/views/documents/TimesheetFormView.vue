@@ -245,6 +245,7 @@ import PrintFormatDialog from '../../components/common/PrintFormatDialog.vue'
 import TimesheetLinesEditor from '../../components/documents/TimesheetLinesEditor.vue'
 import { useDocumentDensity } from '../../composables/useDocumentDensity'
 import { useHeaderBar } from '../../composables/useHeaderBar'
+import { useBasedOnPrefill } from '../../composables/useBasedOnPrefill'
 import {
   autofillTimesheet,
   copyTimesheet,
@@ -278,6 +279,7 @@ const props = defineProps<{ id?: string; tabId?: string }>()
 const router = useRouter()
 const auth = useAuthStore()
 const { isCompactMode } = useDocumentDensity()
+const { hasBasedOn, loadSource } = useBasedOnPrefill()
 
 const saving = ref(false)
 const autofilling = ref(false)
@@ -1091,6 +1093,21 @@ onMounted(async () => {
   try {
     await auth.initialize()
     await loadDocument()
+    if (!isEdit.value && hasBasedOn) {
+      const result = await loadSource()
+      if (result) {
+        const { source, meta } = result
+        if (source.object_id) form.value.object_id = source.object_id
+        if (source.object_name) form.value.object_name = source.object_name
+        if (source.estimate_id) form.value.estimate_id = source.estimate_id
+        if (source.estimate_number) form.value.estimate_number = source.estimate_number
+        if (source.foreman_id && !isForemanUser.value) form.value.foreman_id = source.foreman_id
+        if (source.foreman_name && !isForemanUser.value) form.value.foreman_name = source.foreman_name
+        form.value.based_on_type = meta.based_on_type
+        form.value.based_on_id = meta.based_on_id
+        form.value.based_on_number = meta.based_on_number
+      }
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Ошибка загрузки табеля'
   }

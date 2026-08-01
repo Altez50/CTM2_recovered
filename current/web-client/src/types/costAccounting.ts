@@ -53,6 +53,9 @@ export interface MaterialConsumption {
   is_posted?: boolean
   posted_at?: string | null
   marked_for_deletion?: boolean
+  based_on_type?: string | null
+  based_on_id?: number | null
+  based_on_number?: string | null
   lines: MaterialConsumptionLine[]
   object_name?: string | null
   estimate_number?: string | null
@@ -84,6 +87,9 @@ export interface MachineryUsageReport {
   is_posted?: boolean
   posted_at?: string | null
   marked_for_deletion?: boolean
+  based_on_type?: string | null
+  based_on_id?: number | null
+  based_on_number?: string | null
   lines: MachineryUsageLine[]
   object_name?: string | null
   estimate_number?: string | null
@@ -192,7 +198,8 @@ export interface WorkCostRow {
 export interface CostCardResponse {
   object_id: number
   object_name: string | null
-  period: string | null
+  period_from: string | null
+  period_to: string | null
   elements: CostElementSummary[]
   total_planned: number
   total_actual: number
@@ -214,7 +221,8 @@ export interface TurnoverRow {
 }
 
 export interface TurnoverReportResponse {
-  period: string
+  period_from: string
+  period_to: string
   object_id: number
   object_name: string | null
   rows: TurnoverRow[]

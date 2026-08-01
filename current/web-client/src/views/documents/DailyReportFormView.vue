@@ -174,6 +174,7 @@ import WorkPicker from '../../components/common/WorkPicker.vue'
 import DocumentDataExchangeDialog from '../../components/documents/DocumentDataExchangeDialog.vue'
 import { useDocumentDensity } from '../../composables/useDocumentDensity'
 import { useHeaderBar } from '../../composables/useHeaderBar'
+import { useBasedOnPrefill } from '../../composables/useBasedOnPrefill'
 import { createDailyReport, getDailyReport, getEstimate, listEstimates, postDailyReport, printDailyReportAct, unpostDailyReport, updateDailyReport } from '../../api/documents'
 import { listReferences } from '../../api/references'
 import { useAuthStore } from '../../stores/auth'
@@ -186,6 +187,7 @@ const auth = useAuthStore()
 
 const persons = ref<PersonRecord[]>([])
 const { isCompactMode } = useDocumentDensity()
+const { hasBasedOn, loadSource } = useBasedOnPrefill()
 const saving = ref(false)
 const error = ref('')
 const showSumColumns = ref(false)
@@ -481,6 +483,17 @@ onMounted(async () => {
   // не блокировала отображение данных отчёта.
   try {
     await loadDocument()
+    if (!isEdit && hasBasedOn) {
+      const result = await loadSource()
+      if (result) {
+        const { source, meta } = result
+        if (source.estimate_id) form.value.estimate_id = source.estimate_id
+        if (source.estimate_number) form.value.estimate_number = source.estimate_number
+        form.value.based_on_type = meta.based_on_type
+        form.value.based_on_id = meta.based_on_id
+        form.value.based_on_number = meta.based_on_number
+      }
+    }
     if (!form.value.lines.length) {
       addLine()
     }

@@ -30,6 +30,7 @@ from api.database import (
 )
 from api.models.auth import UserInfo
 from api.models.common import Pagination
+from api.list_query import apply_quick_filters, order_by_clause
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +181,9 @@ def _list_documents(
     contract_id: int | None = None,
     object_id: int | None = None,
     is_posted: bool | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], Pagination]:
     cfg = _config(kind)
     page, page_size = _normalize_page(page, page_size)
@@ -203,7 +207,26 @@ def _list_documents(
     if is_posted is not None:
         where_parts.append("d.is_posted = ?")
         params.append(int(bool(is_posted)))
+    apply_quick_filters(
+        where_parts,
+        params,
+        filters,
+        {
+            "number": ("d.number", "like"),
+            "date": ("d.date", "eq"),
+            "is_posted": ("d.is_posted", "eq"),
+            "counterparty_name": ("cp.name", "like"),
+            "object_name": ("ob.name", "like"),
+            "contract_number": ("ct.number", "like"),
+        },
+    )
     where_sql = " AND ".join(where_parts)
+    order = order_by_clause(
+        sort_by,
+        sort_order,
+        {"id": "d.id", "number": "d.number", "date": "d.date"},
+        "d.date",
+    )
     total = connection.execute(
         f"""
         SELECT COUNT(*)
@@ -230,7 +253,7 @@ def _list_documents(
         LEFT JOIN objects ob ON ob.id = d.object_id
         LEFT JOIN persons p ON p.id = d.responsible_id
         WHERE {where_sql}
-        ORDER BY d.date DESC, d.id DESC
+        {order}
         LIMIT ? OFFSET ?
         """,
         [*params, page_size, (page - 1) * page_size],

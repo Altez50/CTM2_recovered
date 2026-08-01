@@ -23,26 +23,31 @@
       </div>
     </div>
     <div v-if="hasActions" class="header-toolbar">
-      <DocumentActionIcon
+      <component
         v-for="action in activeActions"
+        :is="action.to ? RouterLink : 'button'"
         :key="action.key"
-        :title="action.title"
-        :icon="action.icon"
-        :variant="action.variant ?? 'neutral'"
-        :disabled="action.disabled"
         :to="action.to"
+        :type="action.to ? undefined : 'button'"
+        :disabled="action.disabled"
+        :class="['button', 'header-action', actionVariantClass(action.variant)]"
+        :title="action.title"
         @click="action.onClick?.()"
-      />
+      >
+        <span v-if="action.icon" class="header-action-glyph" aria-hidden="true">{{ action.icon }}</span>
+        <span class="header-action-label">{{ action.title }}</span>
+      </component>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import type { UserInfo } from '../../types/models'
 import WorkspaceTabs from './WorkspaceTabs.vue'
-import DocumentActionIcon from '../common/DocumentActionIcon.vue'
 import { useHeaderBarStore } from '../../stores/headerBar'
+import type { HeaderAction } from '../../stores/headerBar'
 
 defineProps<{
   user: UserInfo
@@ -58,8 +63,14 @@ defineEmits<{
 
 const headerBar = useHeaderBarStore()
 const activeTitle = computed(() => headerBar.activeEntry?.title ?? 'CTM')
-const activeActions = computed(() => headerBar.activeEntry?.actions ?? [])
+const activeActions = computed<HeaderAction[]>(() => headerBar.activeEntry?.actions ?? [])
 const hasActions = computed(() => activeActions.value.length > 0)
+
+function actionVariantClass(variant: HeaderAction['variant']) {
+  if (variant === 'primary') return 'button-primary'
+  if (variant === 'danger') return 'button-danger'
+  return 'button-secondary'
+}
 </script>
 
 <style scoped>
@@ -118,6 +129,25 @@ const hasActions = computed(() => activeActions.value.length > 0)
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
+}
+
+.header-action {
+  min-height: 2.35rem;
+  padding: 0 0.85rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.header-action-glyph {
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.header-action-label {
+  white-space: nowrap;
 }
 
 .header-actions {

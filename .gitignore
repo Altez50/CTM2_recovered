@@ -43,3 +43,7 @@ coverage/
 
 # Deploy local overrides
 deploy/.deploy.*.env
+
+# Generated build-version stamps (written by deploy-prod.ps1)
+api/BUILD_VERSION
+web-client/public/build-version.txt

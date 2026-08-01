@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from api.database import last_insert_id, new_uuid, register_sync_change, utcnow_iso
+from api.list_query import apply_quick_filters, order_by_clause
 
 
 # ── Audit ──────────────────────────────────────────────────────────────────
@@ -172,19 +173,37 @@ def list_material_consumptions(
     page_size: int = 20,
     search: str | None = None,
     object_id: int | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    where = "WHERE mc.marked_for_deletion = 0"
+    where_parts = ["mc.marked_for_deletion = 0"]
     params: list[Any] = []
     if search:
-        where += " AND mc.number LIKE ?"
+        where_parts.append("mc.number LIKE ?")
         params.append(f"%{search}%")
     if object_id:
-        where += " AND mc.object_id = ?"
+        where_parts.append("mc.object_id = ?")
         params.append(object_id)
+    apply_quick_filters(
+        where_parts,
+        params,
+        filters,
+        {
+            "number": ("mc.number", "like"),
+            "date": ("mc.date", "eq"),
+            "is_posted": ("mc.is_posted", "eq"),
+            "object_name": ("o.name", "like"),
+        },
+    )
+    where = "WHERE " + " AND ".join(where_parts)
     total = connection.execute(
-        f"SELECT COUNT(*) FROM material_consumptions mc {where}", params
+        f"SELECT COUNT(*) FROM material_consumptions mc LEFT JOIN objects o ON o.id = mc.object_id {where}", params
     ).fetchone()[0]
     offset = (page - 1) * page_size
+    order = order_by_clause(
+        sort_by, sort_order, {"id": "mc.id", "number": "mc.number", "date": "mc.date"}, "mc.date"
+    )
     rows = connection.execute(
         f"""SELECT mc.*, o.name AS object_name, e.number AS estimate_number,
                    p.full_name AS foreman_name
@@ -193,7 +212,7 @@ def list_material_consumptions(
             LEFT JOIN estimates e ON e.id = mc.estimate_id
             LEFT JOIN persons p ON p.id = mc.foreman_id
             {where}
-            ORDER BY mc.date DESC, mc.id DESC
+            {order}
             LIMIT ? OFFSET ?""",
         params + [page_size, offset],
     ).fetchall()
@@ -379,26 +398,44 @@ def list_machinery_usage_reports(
     page_size: int = 20,
     search: str | None = None,
     object_id: int | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    where = "WHERE mur.marked_for_deletion = 0"
+    where_parts = ["mur.marked_for_deletion = 0"]
     params: list[Any] = []
     if search:
-        where += " AND mur.number LIKE ?"
+        where_parts.append("mur.number LIKE ?")
         params.append(f"%{search}%")
     if object_id:
-        where += " AND mur.object_id = ?"
+        where_parts.append("mur.object_id = ?")
         params.append(object_id)
+    apply_quick_filters(
+        where_parts,
+        params,
+        filters,
+        {
+            "number": ("mur.number", "like"),
+            "date": ("mur.date", "eq"),
+            "is_posted": ("mur.is_posted", "eq"),
+            "object_name": ("o.name", "like"),
+        },
+    )
+    where = "WHERE " + " AND ".join(where_parts)
     total = connection.execute(
-        f"SELECT COUNT(*) FROM machinery_usage_reports mur {where}", params
+        f"SELECT COUNT(*) FROM machinery_usage_reports mur LEFT JOIN objects o ON o.id = mur.object_id {where}", params
     ).fetchone()[0]
     offset = (page - 1) * page_size
+    order = order_by_clause(
+        sort_by, sort_order, {"id": "mur.id", "number": "mur.number", "date": "mur.date"}, "mur.date"
+    )
     rows = connection.execute(
         f"""SELECT mur.*, o.name AS object_name, e.number AS estimate_number
             FROM machinery_usage_reports mur
             LEFT JOIN objects o ON o.id = mur.object_id
             LEFT JOIN estimates e ON e.id = mur.estimate_id
             {where}
-            ORDER BY mur.date DESC, mur.id DESC
+            {order}
             LIMIT ? OFFSET ?""",
         params + [page_size, offset],
     ).fetchall()
@@ -595,26 +632,44 @@ def list_subcontract_acceptances(
     page_size: int = 20,
     search: str | None = None,
     object_id: int | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    where = "WHERE sa.marked_for_deletion = 0"
+    where_parts = ["sa.marked_for_deletion = 0"]
     params: list[Any] = []
     if search:
-        where += " AND sa.number LIKE ?"
+        where_parts.append("sa.number LIKE ?")
         params.append(f"%{search}%")
     if object_id:
-        where += " AND sa.object_id = ?"
+        where_parts.append("sa.object_id = ?")
         params.append(object_id)
+    apply_quick_filters(
+        where_parts,
+        params,
+        filters,
+        {
+            "number": ("sa.number", "like"),
+            "date": ("sa.date", "eq"),
+            "is_posted": ("sa.is_posted", "eq"),
+            "object_name": ("o.name", "like"),
+        },
+    )
+    where = "WHERE " + " AND ".join(where_parts)
     total = connection.execute(
-        f"SELECT COUNT(*) FROM subcontract_acceptances sa {where}", params
+        f"SELECT COUNT(*) FROM subcontract_acceptances sa LEFT JOIN objects o ON o.id = sa.object_id {where}", params
     ).fetchone()[0]
     offset = (page - 1) * page_size
+    order = order_by_clause(
+        sort_by, sort_order, {"id": "sa.id", "number": "sa.number", "date": "sa.date"}, "sa.date"
+    )
     rows = connection.execute(
         f"""SELECT sa.*, o.name AS object_name, e.number AS estimate_number
             FROM subcontract_acceptances sa
             LEFT JOIN objects o ON o.id = sa.object_id
             LEFT JOIN estimates e ON e.id = sa.estimate_id
             {where}
-            ORDER BY sa.date DESC, sa.id DESC
+            {order}
             LIMIT ? OFFSET ?""",
         params + [page_size, offset],
     ).fetchall()
@@ -793,21 +848,38 @@ def list_overhead_expenses(
     page_size: int = 20,
     search: str | None = None,
     period: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    where = "WHERE oe.marked_for_deletion = 0"
+    where_parts = ["oe.marked_for_deletion = 0"]
     params: list[Any] = []
     if search:
-        where += " AND oe.number LIKE ?"
+        where_parts.append("oe.number LIKE ?")
         params.append(f"%{search}%")
     if period:
-        where += " AND oe.period = ?"
+        where_parts.append("oe.period = ?")
         params.append(period)
+    apply_quick_filters(
+        where_parts,
+        params,
+        filters,
+        {
+            "number": ("oe.number", "like"),
+            "period": ("oe.period", "eq"),
+            "is_posted": ("oe.is_posted", "eq"),
+        },
+    )
+    where = "WHERE " + " AND ".join(where_parts)
     total = connection.execute(
         f"SELECT COUNT(*) FROM overhead_expenses oe {where}", params
     ).fetchone()[0]
     offset = (page - 1) * page_size
+    order = order_by_clause(
+        sort_by, sort_order, {"id": "oe.id", "number": "oe.number", "period": "oe.period"}, "oe.period"
+    )
     rows = connection.execute(
-        f"SELECT * FROM overhead_expenses oe {where} ORDER BY oe.period DESC, oe.id DESC LIMIT ? OFFSET ?",
+        f"SELECT * FROM overhead_expenses oe {where} {order} LIMIT ? OFFSET ?",
         params + [page_size, offset],
     ).fetchall()
     items = [dict(row) for row in rows]
@@ -1088,22 +1160,40 @@ def list_cost_calculations(
     page: int = 1,
     page_size: int = 20,
     search: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    where = "WHERE cc.marked_for_deletion = 0"
+    where_parts = ["cc.marked_for_deletion = 0"]
     params: list[Any] = []
     if search:
-        where += " AND (cc.number LIKE ? OR cc.period LIKE ?)"
+        where_parts.append("(cc.number LIKE ? OR cc.period LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%"])
+    apply_quick_filters(
+        where_parts,
+        params,
+        filters,
+        {
+            "number": ("cc.number", "like"),
+            "period": ("cc.period", "eq"),
+            "is_posted": ("cc.is_posted", "eq"),
+            "object_name": ("o.name", "like"),
+        },
+    )
+    where = "WHERE " + " AND ".join(where_parts)
     total = connection.execute(
-        f"SELECT COUNT(*) FROM cost_calculations cc {where}", params
+        f"SELECT COUNT(*) FROM cost_calculations cc LEFT JOIN objects o ON o.id = cc.object_id {where}", params
     ).fetchone()[0]
     offset = (page - 1) * page_size
+    order = order_by_clause(
+        sort_by, sort_order, {"id": "cc.id", "number": "cc.number", "period": "cc.period"}, "cc.period"
+    )
     rows = connection.execute(
         f"""SELECT cc.*, o.name AS object_name
             FROM cost_calculations cc
             LEFT JOIN objects o ON o.id = cc.object_id
             {where}
-            ORDER BY cc.period DESC, cc.id DESC
+            {order}
             LIMIT ? OFFSET ?""",
         params + [page_size, offset],
     ).fetchall()
@@ -1301,9 +1391,27 @@ def unpost_cost_calculation(
 # ── Reports ────────────────────────────────────────────────────────────────
 
 
+def _cost_report_tables_ready(connection: sqlite3.Connection) -> bool:
+    """True if the cost-accounting tables needed by reports exist."""
+    try:
+        connection.execute("SELECT 1 FROM cost_elements LIMIT 1").fetchone()
+        return True
+    except sqlite3.OperationalError:
+        return False
+
+
 def get_cost_card(
-    connection: sqlite3.Connection, object_id: int, period: str | None = None
+    connection: sqlite3.Connection, object_id: int,
+    period_from: str | None = None, period_to: str | None = None,
 ) -> dict[str, Any]:
+    if not _cost_report_tables_ready(connection):
+        return {
+            "object_id": object_id, "object_name": None,
+            "period_from": period_from, "period_to": period_to,
+            "elements": [], "total_planned": 0.0, "total_actual": 0.0,
+            "total_deviation": 0.0, "total_contract_value": 0.0,
+            "total_profit": 0.0, "profitability_pct": 0.0, "works": [],
+        }
     obj_name = None
     if object_id:
         obj_row = connection.execute(
@@ -1313,9 +1421,12 @@ def get_cost_card(
 
     extra_filter = ""
     params: list[Any] = []
-    if period:
-        extra_filter += " AND x.period = ?"
-        params.append(period)
+    if period_from:
+        extra_filter += " AND x.period >= ?"
+        params.append(period_from)
+    if period_to:
+        extra_filter += " AND x.period <= ?"
+        params.append(period_to)
     if object_id:
         extra_filter += " AND x.object_id = ?"
         params.append(object_id)
@@ -1366,9 +1477,12 @@ def get_cost_card(
     # Work-level detail from completed_works_cost
     cw_filter = "WHERE 1=1"
     cw_params: list[Any] = []
-    if period:
-        cw_filter += " AND cwc.period = ?"
-        cw_params.append(period)
+    if period_from:
+        cw_filter += " AND cwc.period >= ?"
+        cw_params.append(period_from)
+    if period_to:
+        cw_filter += " AND cwc.period <= ?"
+        cw_params.append(period_to)
     if object_id:
         cw_filter += " AND cwc.object_id = ?"
         cw_params.append(object_id)
@@ -1407,7 +1521,8 @@ def get_cost_card(
     return {
         "object_id": object_id,
         "object_name": obj_name,
-        "period": period,
+        "period_from": period_from,
+        "period_to": period_to,
         "elements": element_summaries,
         "total_planned": round(total_planned, 2),
         "total_actual": round(total_actual, 2),
@@ -1422,8 +1537,10 @@ def get_cost_card(
 
 
 def get_turnover_balance(
-    connection: sqlite3.Connection, period: str, object_id: int = 0
+    connection: sqlite3.Connection, period_from: str, period_to: str, object_id: int = 0
 ) -> dict[str, Any]:
+    if not _cost_report_tables_ready(connection):
+        return {"rows": []}
     obj_filter = "AND object_id = ?" if object_id else ""
     obj_params = (object_id,) if object_id else ()
 
@@ -1433,28 +1550,28 @@ def get_turnover_balance(
 
     rows = []
     for el in elements:
-        # Opening: all prior periods
+        # Opening: all periods before period_from
         opening = connection.execute(
             f"""SELECT COALESCE(SUM(amount), 0)
                 FROM actual_costs
                 WHERE cost_element_id = ? AND period < ? {obj_filter}""",
-            (el["id"], period) + obj_params,
+            (el["id"], period_from) + obj_params,
         ).fetchone()[0]
 
-        # Inflow: current period
+        # Inflow: positive amounts within [period_from, period_to]
         inflow = connection.execute(
             f"""SELECT COALESCE(SUM(amount), 0)
                 FROM actual_costs
-                WHERE cost_element_id = ? AND period = ? AND amount > 0 {obj_filter}""",
-            (el["id"], period) + obj_params,
+                WHERE cost_element_id = ? AND period >= ? AND period <= ? AND amount > 0 {obj_filter}""",
+            (el["id"], period_from, period_to) + obj_params,
         ).fetchone()[0]
 
-        # Outflow: current period (negative amounts = reversals)
+        # Outflow: negative amounts (reversals) within [period_from, period_to]
         outflow = connection.execute(
             f"""SELECT COALESCE(SUM(ABS(amount)), 0)
                 FROM actual_costs
-                WHERE cost_element_id = ? AND period = ? AND amount < 0 {obj_filter}""",
-            (el["id"], period) + obj_params,
+                WHERE cost_element_id = ? AND period >= ? AND period <= ? AND amount < 0 {obj_filter}""",
+            (el["id"], period_from, period_to) + obj_params,
         ).fetchone()[0]
 
         closing = float(opening) + float(inflow) - float(outflow)
@@ -1476,7 +1593,8 @@ def get_turnover_balance(
         obj_name = obj_row["name"] if obj_row else None
 
     return {
-        "period": period,
+        "period_from": period_from,
+        "period_to": period_to,
         "object_id": object_id,
         "object_name": obj_name,
         "rows": rows,
@@ -1486,6 +1604,8 @@ def get_turnover_balance(
 def get_deviations(
     connection: sqlite3.Connection, period: str, threshold_pct: float = 0.0, object_id: int = 0
 ) -> dict[str, Any]:
+    if not _cost_report_tables_ready(connection):
+        return {"rows": []}
     obj_filter = "AND cwc.object_id = ?" if object_id else ""
     obj_params = (period, object_id) if object_id else (period,)
 
@@ -1530,6 +1650,8 @@ def get_deviations(
 def get_profitability(
     connection: sqlite3.Connection, period: str | None = None
 ) -> dict[str, Any]:
+    if not _cost_report_tables_ready(connection):
+        return {"rows": []}
     period_filter = "WHERE cwc.period = ?" if period else ""
     params = (period,) if period else ()
 

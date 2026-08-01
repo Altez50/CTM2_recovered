@@ -2,119 +2,54 @@
   <div class="page-shell">
     <section class="panel">
       <div class="panel-body">
-        <div class="toolbar timesheet-filters-row">
-          <input
-            v-model="search"
-            class="input toolbar-grow timesheet-filter-search"
-            type="search"
-            placeholder="Поиск по номеру, объекту, смете или бригадиру"
-          />
-          <select v-model="objectId" class="select timesheet-filter-control timesheet-filter-object">
-            <option :value="null">Все объекты</option>
-            <option v-for="item in objects" :key="item.id" :value="item.id">{{ item.name }}</option>
-          </select>
-          <input v-model="monthYear" class="input timesheet-filter-control timesheet-filter-month" type="month" />
-          <select v-model="postingFilter" class="select timesheet-filter-control timesheet-filter-status">
-            <option value="">Все статусы</option>
-            <option value="draft">Черновики</option>
-            <option value="posted">Проведенные</option>
-          </select>
-          <button class="button button-secondary timesheet-filter-action" type="button" title="Обновить" @click="loadItems">↻</button>
-          <button class="button button-primary timesheet-filter-action" type="button" @click="router.push('/documents/timesheets/new')">Создать табель</button>
+        <div class="toolbar search-row">
+          <input v-model="search" class="input toolbar-grow" type="search" placeholder="Поиск по номеру, объекту, смете или бригадиру" />
         </div>
+
+        <ListCommandBar :state="state" :config="config" @open-settings="settingsOpen = true">
+          <template #commands>
+            <button
+              v-if="state.singleRow.value"
+              class="button button-secondary"
+              type="button"
+              @click="printDocument(state.singleRow.value?.id as number)"
+            >
+              Печать
+            </button>
+          </template>
+        </ListCommandBar>
 
         <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
 
-        <SelectionActionBar
-          :selected-count="selectedIds.length"
-          @deselect-all="selectedIds = []"
-        >
-          <button
-            v-if="selectedIds.length === 1"
-            class="button button-secondary"
-            type="button"
-            @click="openItem(Number(selectedIds[0]))"
-          >
-            Открыть
-          </button>
-          <button
-            v-if="selectedIds.length === 1"
-            class="button button-secondary"
-            type="button"
-            title="Копировать"
-            @click="copyItem(Number(selectedIds[0]))"
-          >
-            ⎘
-          </button>
-          <button
-            v-if="canManagePostingSelected && canPostSelected"
-            class="button button-secondary"
-            type="button"
-            title="Провести"
-            @click="changePostingSelected('post')"
-          >
-            ✓
-          </button>
-          <button
-            v-if="canManagePostingSelected && canUnpostSelected"
-            class="button button-secondary"
-            type="button"
-            title="Отменить проведение"
-            @click="changePostingSelected('unpost')"
-          >
-            ↺
-          </button>
-          <button
-            v-if="selectedIds.length === 1"
-            class="button button-secondary"
-            type="button"
-            @click="printItem(Number(selectedIds[0]))"
-          >
-            Печать
-          </button>
-          <button
-            v-if="canDeleteSelected"
-            class="button button-danger"
-            type="button"
-            title="Удалить"
-            @click="removeSelected"
-          >
-            ✕
-          </button>
-        </SelectionActionBar>
-
         <DataTable
-          :columns="columns"
+          :columns="effectiveColumns"
           :rows="rows as Record<string, unknown>[]"
           :loading="loading"
           empty-text="Табелей пока нет"
           selectable
           :selected-ids="selectedIds"
+          sortable
+          :sort="sort"
+          :filterable="filterRowVisible"
+          :filters="filters"
           @update:selected-ids="selectedIds = $event"
           @row-dblclick="handleRowDblClick"
+          @row-contextmenu="(row, ev) => ctx.onContextMenu(row as DocListRow, ev)"
+          @sort-change="onSortChange"
+          @filter-change="onFilterChange"
         >
           <template #cell-number="{ row }">
-            <RouterLink class="document-list-link" :to="`/documents/timesheets/${(row as unknown as Timesheet).id}`">
-              <strong>{{ (row as unknown as Timesheet).number }}</strong>
+            <RouterLink class="document-list-link" :to="`/documents/timesheets/${(row as DocListRow).id}`">
+              <strong>{{ (row as DocListRow).number }}</strong>
             </RouterLink>
           </template>
-          <template #cell-date="{ row }">
-            <RouterLink class="document-list-link" :to="`/documents/timesheets/${(row as unknown as Timesheet).id}`">
-              {{ formatDate((row as unknown as Timesheet).date) }}
-            </RouterLink>
-          </template>
-          <template #cell-month_year="{ row }">
-            {{ formatMonthYear((row as unknown as Timesheet).month_year) }}
-          </template>
-          <template #cell-total_hours="{ row }">
-            {{ formatNumber((row as unknown as Timesheet).total_hours) }}
-          </template>
+          <template #cell-date="{ row }">{{ formatDate((row as DocListRow).date as string) }}</template>
           <template #cell-total_amount="{ row }">
-            {{ formatNumber((row as unknown as Timesheet).total_amount) }}
+            {{ formatNumber((row as DocListRow).total_amount as number) }}
           </template>
           <template #cell-is_posted="{ row }">
-            <span :class="['status-pill', (row as unknown as Timesheet).is_posted ? 'posted' : 'draft']">
-              {{ (row as unknown as Timesheet).is_posted ? 'Проведен' : 'Черновик' }}
+            <span :class="['status-pill', (row as DocListRow).is_posted ? 'posted' : 'draft']">
+              {{ (row as DocListRow).is_posted ? 'Проведен' : 'Черновик' }}
             </span>
           </template>
         </DataTable>
@@ -123,122 +58,95 @@
           <span class="muted">Страница {{ pagination.page }} из {{ pagination.pages }}. Всего: {{ pagination.total }}</span>
           <div class="table-actions">
             <button class="button button-secondary" type="button" :disabled="page <= 1" @click="page -= 1">Назад</button>
-            <button class="button button-secondary" type="button" :disabled="page >= pagination.pages" @click="page += 1">Вперед</button>
+            <button class="button button-secondary" type="button" :disabled="page >= pagination.pages" @click="page += 1">Вперёд</button>
           </div>
         </div>
       </div>
     </section>
+
+    <ListSettingsDialog
+      :open="settingsOpen"
+      :columns="config.columns"
+      :states="settingsStates"
+      @close="settingsOpen = false"
+      @apply="onApplyColumns"
+      @reset="onResetColumns"
+    />
     <PrintFormatDialog
-      :open="printId !== null"
+      :open="printState !== null"
       title="Печать табеля"
-      @close="printId = null"
+      @close="printState = null"
       @select="runPrint"
+    />
+    <ContextMenu
+      :open="ctx.menuOpen.value"
+      :items="ctx.menuItems.value"
+      :x="ctx.menuX.value"
+      :y="ctx.menuY.value"
+      @close="ctx.closeMenu()"
+      @select="ctx.onSelect"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
 import DataTable from '../../components/common/DataTable.vue'
 import PrintFormatDialog from '../../components/common/PrintFormatDialog.vue'
-import SelectionActionBar from '../../components/common/SelectionActionBar.vue'
-import {
-  copyTimesheet,
-  deleteTimesheet,
-  listTimesheets,
-  postTimesheet,
-  printTimesheet,
-  unpostTimesheet,
-} from '../../api/documents'
-import { listReferences } from '../../api/references'
-import { useAuthStore } from '../../stores/auth'
+import ContextMenu from '../../components/common/ContextMenu.vue'
+import ListCommandBar from '../../components/documents/ListCommandBar.vue'
+import ListSettingsDialog from '../../components/documents/ListSettingsDialog.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
-import type { HeaderAction } from '../../stores/headerBar'
-import type { ObjectRecord, Timesheet } from '../../types/models'
+import { useDocumentList } from '../../composables/useDocumentList'
+import { useDocumentListContextMenu } from '../../composables/useDocumentListContextMenu'
+import { timesheetListConfig } from '../../config/documentLists'
+import { printTimesheet } from '../../api/documents'
+import type { DocListRow } from '../../config/documentListTypes'
+import type { ColumnState } from '../../composables/useListSettings'
 
 const props = defineProps<{ tabId?: string }>()
-const auth = useAuthStore()
-const router = useRouter()
+const config = timesheetListConfig
+const state = useDocumentList(config)
+const ctx = useDocumentListContextMenu(config, state)
 
-const headerActions = computed<HeaderAction[]>(() => [
-  { key: 'create', icon: '+', title: 'Создать табель', variant: 'primary', to: '/documents/timesheets/new' },
-])
-useHeaderBar(props.tabId, computed(() => 'Табели'), headerActions)
+useHeaderBar(props.tabId, computed(() => config.title), computed(() => []))
 
-const rows = ref<Timesheet[]>([])
-const objects = ref<ObjectRecord[]>([])
-const loading = ref(false)
-const error = ref('')
-const search = ref('')
-const objectId = ref<number | null>(null)
-const monthYear = ref('')
-const postingFilter = ref('')
-const page = ref(1)
-const pagination = ref({ page: 1, pages: 1, total: 0 })
-const selectedIds = ref<string[]>([])
-let searchTimer = 0
+const {
+  rows, loading, error, search, page, pagination, selectedIds,
+  sort, filters, filterRowVisible, effectiveColumns,
+  onSortChange, onFilterChange,
+} = state
 
-const columns = [
-  { key: 'number', label: 'Номер' },
-  { key: 'date', label: 'Дата' },
-  { key: 'month_year', label: 'Период' },
-  { key: 'object_name', label: 'Объект' },
-  { key: 'estimate_number', label: 'Смета' },
-  { key: 'foreman_name', label: 'Бригадир' },
-  { key: 'total_hours', label: 'Часы' },
-  { key: 'total_amount', label: 'Сумма' },
-  { key: 'is_posted', label: 'Статус' },
-]
+const settingsOpen = ref(false)
+const printState = ref<{ id: number } | null>(null)
 
-const canPostSelected = computed(() => {
-  if (!selectedIds.value.length) return false
-  return selectedIds.value.every((id) => {
-    const row = rows.value.find((r) => String(r.id) === id)
-    return row && !row.is_posted
-  })
+const settingsStates = computed<ColumnState[]>(() => {
+  const saved = state.settings.savedColumns.value
+  if (saved) return saved
+  return config.columns.map((c) => ({ key: c.key, visible: c.defaultVisible !== false }))
 })
 
-const canUnpostSelected = computed(() => {
-  if (!selectedIds.value.length) return false
-  return selectedIds.value.every((id) => {
-    const row = rows.value.find((r) => String(r.id) === id)
-    return row && row.is_posted
-  })
-})
+function onApplyColumns(states: ColumnState[]) {
+  void state.settings.saveColumns(states)
+}
 
-const canManagePostingSelected = computed(() => {
-  if (auth.user?.role === 'admin') return true
-  if (auth.user?.role !== 'foreman') return false
-  return selectedIds.value.every((id) => {
-    const row = rows.value.find((r) => String(r.id) === id)
-    return row && row.foreman_id === auth.user?.person_id
-  })
-})
+async function onResetColumns() {
+  await state.settings.resetColumns()
+}
 
-const canDeleteSelected = computed(() => {
-  return selectedIds.value.every((id) => {
-    const row = rows.value.find((r) => String(r.id) === id)
-    return row && !row.is_posted
-  })
-})
+function handleRowDblClick(row: Record<string, unknown>) {
+  state.openItem((row as DocListRow).id as number)
+}
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(value || 0)
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(value ?? 0)
 }
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '—'
-  const [yearValue, monthValue, dayValue] = value.split('-').map(Number)
-  if (!yearValue || !monthValue || !dayValue) return value
-  return new Date(yearValue, monthValue - 1, dayValue).toLocaleDateString('ru-RU')
-}
-
-function formatMonthYear(value: string) {
-  if (!value) return '—'
-  const [yearValue, monthValue] = value.split('-').map(Number)
-  if (!yearValue || !monthValue) return value
-  return new Date(yearValue, monthValue - 1, 1).toLocaleDateString('ru-RU', { year: 'numeric', month: 'long' })
+  const [y, m, d] = value.split('-').map(Number)
+  if (!y || !m || !d) return value
+  return new Date(y, m - 1, d).toLocaleDateString('ru-RU')
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -250,184 +158,26 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-function openItem(id: number) {
-  router.push(`/documents/timesheets/${id}`)
-}
-
-function handleRowDblClick(row: Record<string, unknown>) {
-  router.push(`/documents/timesheets/${(row as unknown as Timesheet).id}`)
-}
-
-async function loadOptions() {
-  const response = await listReferences('objects', { page_size: 50 })
-  objects.value = response.data as ObjectRecord[]
-}
-
-async function loadItems() {
-  loading.value = true
-  error.value = ''
-  try {
-    const response = await listTimesheets({
-      page: page.value,
-      page_size: 20,
-      search: search.value,
-      object_id: objectId.value ?? undefined,
-      month_year: monthYear.value || undefined,
-      is_posted: postingFilter.value === '' ? undefined : postingFilter.value === 'posted' ? 1 : 0,
-      sort_order: 'desc',
-    })
-    rows.value = response.data
-    pagination.value = {
-      page: response.pagination?.page ?? 1,
-      pages: response.pagination?.pages ?? 1,
-      total: response.pagination?.total ?? 0,
-    }
-    selectedIds.value = []
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Не удалось загрузить табели'
-  } finally {
-    loading.value = false
-  }
-}
-
-async function changePostingSelected(mode: 'post' | 'unpost') {
-  if (!selectedIds.value.length) return
-  error.value = ''
-  let failed = 0
-  for (const id of selectedIds.value) {
-    try {
-      if (mode === 'post') {
-        await postTimesheet(Number(id))
-      } else {
-        await unpostTimesheet(Number(id))
-      }
-    } catch {
-      failed++
-    }
-  }
-  await loadItems()
-  if (failed > 0) {
-    error.value = `Не удалось изменить статус для ${failed} из ${selectedIds.value.length + failed} табелей`
-  }
-}
-
-async function printItem(id?: number) {
+function printDocument(id?: number) {
   if (!id) return
-  printId.value = id
+  printState.value = { id }
 }
-
-const printId = ref<number | null>(null)
 
 async function runPrint(format: 'excel' | 'pdf') {
-  if (!printId.value) return
-  const id = printId.value
+  if (!printState.value) return
+  const { id } = printState.value
   try {
     const blob = await printTimesheet(id, format)
     downloadBlob(blob, `timesheet_${id}.${format === 'pdf' ? 'pdf' : 'xlsx'}`)
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Не удалось сформировать печатную форму'
+  } finally {
+    printState.value = null
   }
 }
-
-async function copyItem(id?: number) {
-  if (!id) return
-  try {
-    const response = await copyTimesheet(id)
-    await router.push(`/documents/timesheets/${response.data.id}`)
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Не удалось скопировать табель'
-  }
-}
-
-async function removeSelected() {
-  if (!selectedIds.value.length) return
-  const label = selectedIds.value.length === 1 ? 'табель' : `${selectedIds.value.length} табелей`
-  if (!window.confirm(`Пометить ${label} на удаление?`)) return
-
-  error.value = ''
-  let failed = 0
-  for (const id of selectedIds.value) {
-    try {
-      await deleteTimesheet(Number(id))
-    } catch {
-      failed++
-    }
-  }
-  await loadItems()
-  if (failed > 0) {
-    error.value = `Не удалось удалить ${failed} из ${selectedIds.value.length + failed} табелей`
-  }
-}
-
-watch(page, loadItems)
-watch([objectId, monthYear, postingFilter], () => {
-  page.value = 1
-  loadItems()
-})
-watch(search, () => {
-  window.clearTimeout(searchTimer)
-  searchTimer = window.setTimeout(() => {
-    page.value = 1
-    loadItems()
-  }, 300)
-})
-
-onMounted(async () => {
-  await auth.initialize()
-  await loadOptions()
-  await loadItems()
-})
 </script>
 
 <style scoped>
-.timesheet-filters-row {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.65rem;
-}
-
-.timesheet-filter-search {
-  min-width: 18rem;
-}
-
-.timesheet-filter-control {
-  flex: 0 0 auto;
-}
-
-.timesheet-filter-object {
-  width: min(18rem, 24vw);
-}
-
-.timesheet-filter-month {
-  width: 10.5rem;
-}
-
-.timesheet-filter-status {
-  width: 12rem;
-}
-
-.timesheet-filter-action {
-  flex: 0 0 auto;
-}
-
-.pagination-row {
-  justify-content: space-between;
-  margin-top: 1rem;
-}
-
-@media (max-width: 980px) {
-  .timesheet-filters-row {
-    flex-wrap: wrap;
-    align-items: stretch;
-  }
-
-  .timesheet-filter-search,
-  .timesheet-filter-object,
-  .timesheet-filter-month,
-  .timesheet-filter-status {
-    width: 100%;
-    min-width: 0;
-  }
-}
+.search-row { margin-bottom: 0.75rem; }
+.pagination-row { justify-content: space-between; margin-top: 1rem; }
 </style>

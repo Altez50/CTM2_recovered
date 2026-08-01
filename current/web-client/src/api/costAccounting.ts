@@ -335,16 +335,17 @@ export function unpostCostCalculation(id: number) {
 
 // ── Reports ───────────────────────────────────────────────────────────────
 
-export function getCostCard(objectId: number, period?: string | null) {
+export function getCostCard(objectId: number, periodFrom?: string | null, periodTo?: string | null) {
   const params = new URLSearchParams()
   params.set('object_id', String(objectId))
-  if (period) params.set('period', period)
+  if (periodFrom) params.set('period_from', periodFrom)
+  if (periodTo) params.set('period_to', periodTo)
   return apiRequest<ApiResponse<CostCardResponse>>(`/api/cost/reports/cost-card?${params}`)
 }
 
-export function getCostTurnover(period: string, objectId: number = 0) {
+export function getCostTurnover(periodFrom: string, periodTo: string, objectId: number = 0) {
   return apiRequest<ApiResponse<TurnoverReportResponse>>(
-    `/api/cost/reports/cost-turnover?period=${period}&object_id=${objectId}`,
+    `/api/cost/reports/cost-turnover?period_from=${periodFrom}&period_to=${periodTo}&object_id=${objectId}`,
   )
 }
 

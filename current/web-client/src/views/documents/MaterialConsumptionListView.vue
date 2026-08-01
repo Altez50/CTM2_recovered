@@ -2,107 +2,125 @@
   <div class="page-shell">
     <section class="panel">
       <div class="panel-body">
-        <div class="toolbar">
+        <div class="toolbar search-row">
           <input v-model="search" class="input toolbar-grow" type="search" placeholder="Поиск по номеру" />
-          <button class="button button-primary" type="button" @click="router.push('/documents/material-consumptions/new')">Расход материалов</button>
-          <button class="button button-secondary" type="button" title="Обновить" @click="loadItems">↻</button>
         </div>
+
+        <ListCommandBar :state="state" :config="config" @open-settings="settingsOpen = true" />
+
         <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
 
-        <SelectionActionBar :selected-count="selectedIds.length" @deselect-all="selectedIds = []">
-          <button v-if="selectedIds.length === 1" class="button button-secondary" type="button" @click="openItem(Number(selectedIds[0]))">Открыть</button>
-          <button v-if="auth.isAdmin && canPostSelected" class="button button-secondary" type="button" title="Провести" @click="changePostingSelected('post')">✓</button>
-          <button v-if="auth.isAdmin && canUnpostSelected" class="button button-secondary" type="button" title="Отменить проведение" @click="changePostingSelected('unpost')">↺</button>
-          <button class="button button-danger" type="button" title="Удалить" @click="removeSelected">✕</button>
-        </SelectionActionBar>
-
-        <DataTable :columns="columns" :rows="rows as Record<string, unknown>[]" :loading="loading" empty-text="Документов пока нет" selectable :selected-ids="selectedIds" @update:selected-ids="selectedIds = $event" @row-dblclick="handleRowDblClick" @row-contextmenu="onContextMenu as any">
+        <DataTable
+          :columns="effectiveColumns"
+          :rows="rows as Record<string, unknown>[]"
+          :loading="loading"
+          empty-text="Документов пока нет"
+          selectable
+          :selected-ids="selectedIds"
+          sortable
+          :sort="sort"
+          :filterable="filterRowVisible"
+          :filters="filters"
+          @update:selected-ids="selectedIds = $event"
+          @row-dblclick="handleRowDblClick"
+          @row-contextmenu="(row, ev) => ctx.onContextMenu(row as DocListRow, ev)"
+          @sort-change="onSortChange"
+          @filter-change="onFilterChange"
+        >
           <template #cell-number="{ row }">
-            <RouterLink class="document-list-link" :to="`/documents/material-consumptions/${(row as unknown as MaterialConsumption).id}`">
-              <strong>{{ (row as unknown as MaterialConsumption).number }}</strong>
+            <RouterLink class="document-list-link" :to="`/documents/material-consumptions/${(row as DocListRow).id}`">
+              <strong>{{ (row as DocListRow).number }}</strong>
             </RouterLink>
           </template>
-          <template #cell-date="{ row }">{{ formatDate((row as unknown as MaterialConsumption).date) }}</template>
+          <template #cell-date="{ row }">{{ formatDate((row as DocListRow).date as string) }}</template>
           <template #cell-is_posted="{ row }">
-            <span :class="['status-pill', (row as unknown as MaterialConsumption).is_posted ? 'posted' : 'draft']">{{ (row as unknown as MaterialConsumption).is_posted ? 'Проведен' : 'Черновик' }}</span>
+            <span :class="['status-pill', (row as DocListRow).is_posted ? 'posted' : 'draft']">
+              {{ (row as DocListRow).is_posted ? 'Проведен' : 'Черновик' }}
+            </span>
           </template>
         </DataTable>
 
         <div class="toolbar pagination-row">
           <span class="muted">Страница {{ pagination.page }} из {{ pagination.pages }}. Всего: {{ pagination.total }}</span>
           <div class="table-actions">
-            <button class="button button-secondary" :disabled="page <= 1" @click="page -= 1">Назад</button>
-            <button class="button button-secondary" :disabled="page >= pagination.pages" @click="page += 1">Вперед</button>
+            <button class="button button-secondary" type="button" :disabled="page <= 1" @click="page -= 1">Назад</button>
+            <button class="button button-secondary" type="button" :disabled="page >= pagination.pages" @click="page += 1">Вперёд</button>
           </div>
         </div>
       </div>
     </section>
-    <ContextMenu :open="menuOpen" :items="menuItems" :x="menuX" :y="menuY" @close="closeMenu" @select="onMenuSelect" />
+
+    <ListSettingsDialog
+      :open="settingsOpen"
+      :columns="config.columns"
+      :states="settingsStates"
+      @close="settingsOpen = false"
+      @apply="onApplyColumns"
+      @reset="onResetColumns"
+    />
+    <ContextMenu
+      :open="ctx.menuOpen.value"
+      :items="ctx.menuItems.value"
+      :x="ctx.menuX.value"
+      :y="ctx.menuY.value"
+      @close="ctx.closeMenu()"
+      @select="ctx.onSelect"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
 import DataTable from '../../components/common/DataTable.vue'
-import SelectionActionBar from '../../components/common/SelectionActionBar.vue'
-import { useAuthStore } from '../../stores/auth'
+import ContextMenu from '../../components/common/ContextMenu.vue'
+import ListCommandBar from '../../components/documents/ListCommandBar.vue'
+import ListSettingsDialog from '../../components/documents/ListSettingsDialog.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
-import type { HeaderAction } from '../../stores/headerBar'
-import ContextMenu, { type ContextMenuItem } from '../../components/common/ContextMenu.vue'
-import { useDocumentContextMenu } from '../../composables/useDocumentContextMenu'
-import type { MaterialConsumption } from '../../types/costAccounting'
-import { deleteMaterialConsumption, listMaterialConsumptions, postMaterialConsumption, restoreMaterialConsumption, unpostMaterialConsumption } from '../../api/costAccounting'
+import { useDocumentList } from '../../composables/useDocumentList'
+import { useDocumentListContextMenu } from '../../composables/useDocumentListContextMenu'
+import { materialConsumptionListConfig } from '../../config/documentLists'
+import type { DocListRow } from '../../config/documentListTypes'
+import type { ColumnState } from '../../composables/useListSettings'
 
 const props = defineProps<{ tabId?: string }>()
-const auth = useAuthStore(); const router = useRouter()
-const headerActions = computed<HeaderAction[]>(() => [{ key: 'create', icon: '+', title: 'Расход материалов', variant: 'primary', to: '/documents/material-consumptions/new' }])
-useHeaderBar(props.tabId, computed(() => 'Расход материалов'), headerActions)
+const config = materialConsumptionListConfig
+const state = useDocumentList(config)
+const ctx = useDocumentListContextMenu(config, state)
 
-const rows = ref<MaterialConsumption[]>([]); const loading = ref(false); const error = ref(''); const search = ref(''); const page = ref(1)
-const pagination = ref({ page: 1, pages: 1, total: 0 }); const selectedIds = ref<string[]>([]); let searchTimer = 0
+useHeaderBar(props.tabId, computed(() => config.title), computed(() => []))
 
-const columns = [
-  { key: 'number', label: 'Номер' }, { key: 'date', label: 'Дата' }, { key: 'object_name', label: 'Объект' },
-  { key: 'estimate_number', label: 'Смета' }, { key: 'warehouse', label: 'Склад' }, { key: 'is_posted', label: 'Статус' },
-]
+const {
+  rows, loading, error, search, page, pagination, selectedIds,
+  sort, filters, filterRowVisible, effectiveColumns,
+  onSortChange, onFilterChange,
+} = state
 
-const canPostSelected = computed(() => selectedIds.value.length > 0 && selectedIds.value.every((id) => { const row = rows.value.find((r) => String(r.id) === id); return row && !row.is_posted }))
-const canUnpostSelected = computed(() => selectedIds.value.length > 0 && selectedIds.value.every((id) => { const row = rows.value.find((r) => String(r.id) === id); return row && row.is_posted }))
-
-const { menuOpen, menuX, menuY, menuItems, onContextMenu, closeMenu, onMenuSelect } = useDocumentContextMenu<MaterialConsumption>({
-  onPost: async (row) => { await postMaterialConsumption(Number(row.id)); await loadItems() },
-  onUnpost: async (row) => { await unpostMaterialConsumption(Number(row.id)); await loadItems() },
-  onDelete: async (row) => { await deleteMaterialConsumption(Number(row.id)); await loadItems() },
-  onRestore: async (row) => { await restoreMaterialConsumption(Number(row.id)); await loadItems() },
+const settingsOpen = ref(false)
+const settingsStates = computed<ColumnState[]>(() => {
+  const saved = state.settings.savedColumns.value
+  return saved ?? config.columns.map((c) => ({ key: c.key, visible: c.defaultVisible !== false }))
 })
 
-function formatDate(v: string | null | undefined) { if (!v) return '—'; const [y,m,d] = v.split('-').map(Number); return y && m && d ? new Date(y,m-1,d).toLocaleDateString('ru-RU') : v }
-function openItem(id: number) { router.push(`/documents/material-consumptions/${id}`) }
-function handleRowDblClick(row: Record<string, unknown>) { router.push(`/documents/material-consumptions/${(row as unknown as MaterialConsumption).id}`) }
-
-async function loadItems() {
-  loading.value = true; error.value = ''
-  try { const r = await listMaterialConsumptions({ page: page.value, page_size: 20, search: search.value, sort_order: 'desc' }); rows.value = r.data; pagination.value = { page: r.pagination?.page ?? 1, pages: r.pagination?.pages ?? 1, total: r.pagination?.total ?? 0 }; selectedIds.value = [] } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } finally { loading.value = false }
+function onApplyColumns(states: ColumnState[]) {
+  void state.settings.saveColumns(states)
+}
+function onResetColumns() {
+  void state.settings.resetColumns()
 }
 
-async function changePostingSelected(mode: 'post' | 'unpost') {
-  if (!selectedIds.value.length) return; error.value = ''; let failed = 0
-  for (const id of selectedIds.value) { try { mode === 'post' ? await postMaterialConsumption(Number(id)) : await unpostMaterialConsumption(Number(id)) } catch { failed++ } }
-  await loadItems(); if (failed) error.value = `Не удалось изменить статус для ${failed} документов`
+function handleRowDblClick(row: Record<string, unknown>) {
+  state.openItem((row as DocListRow).id as number)
 }
 
-async function removeSelected() {
-  if (!selectedIds.value.length) return
-  const label = selectedIds.value.length === 1 ? 'документ' : `${selectedIds.value.length} документов`
-  if (!window.confirm(`Пометить ${label} на удаление?`)) return
-  error.value = ''; let failed = 0
-  for (const id of selectedIds.value) { try { await deleteMaterialConsumption(Number(id)) } catch { failed++ } }
-  await loadItems(); if (failed) error.value = `Не удалось удалить ${failed} документов`
+function formatDate(value: string | null | undefined) {
+  if (!value) return '—'
+  const [y, m, d] = value.split('-').map(Number)
+  if (!y || !m || !d) return value
+  return new Date(y, m - 1, d).toLocaleDateString('ru-RU')
 }
-
-watch(page, loadItems)
-watch(search, () => { clearTimeout(searchTimer); searchTimer = window.setTimeout(() => { page.value = 1; loadItems() }, 300) })
-onMounted(loadItems)
 </script>
-<style scoped>.pagination-row { justify-content: space-between; margin-top: 1rem; }</style>
+
+<style scoped>
+.search-row { margin-bottom: 0.75rem; }
+.pagination-row { justify-content: space-between; margin-top: 1rem; }
+</style>

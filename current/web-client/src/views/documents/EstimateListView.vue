@@ -2,89 +2,49 @@
   <div class="page-shell">
     <section class="panel">
       <div class="panel-body">
-        <div class="toolbar">
+        <div class="toolbar search-row">
           <input v-model="search" class="input toolbar-grow" type="search" placeholder="Поиск по номеру, заказчику, объекту" />
-          <button class="button button-primary" type="button" @click="router.push('/documents/estimates/new')">Создать смету</button>
-          <button class="button button-secondary" type="button" title="Обновить" @click="loadItems">↻</button>
         </div>
+
+        <ListCommandBar :state="state" :config="config" @open-settings="settingsOpen = true">
+          <template #commands>
+            <button
+              v-if="state.singleRow.value"
+              class="button button-secondary"
+              type="button"
+              @click="printDocument(state.singleRow.value?.id as number)"
+            >
+              Печать сметы
+            </button>
+            <button
+              v-if="state.singleRow.value"
+              class="button button-secondary"
+              type="button"
+              @click="printActDocument(state.singleRow.value?.id as number)"
+            >
+              Печать акта
+            </button>
+          </template>
+        </ListCommandBar>
 
         <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
 
-        <SelectionActionBar
-          :selected-count="selectedIds.length"
-          @deselect-all="selectedIds = []"
-        >
-          <button
-            v-if="selectedIds.length === 1"
-            class="button button-secondary"
-            type="button"
-            @click="openItem(Number(selectedIds[0]))"
-          >
-            Открыть
-          </button>
-          <button
-            v-if="selectedIds.length === 1"
-            class="button button-secondary"
-            type="button"
-            title="Копировать"
-            @click="copyItem(Number(selectedIds[0]))"
-          >
-            ⎘
-          </button>
-          <button
-            v-if="auth.isAdmin && canPostSelected"
-            class="button button-secondary"
-            type="button"
-            title="Провести"
-            @click="changePostingSelected('post')"
-          >
-            ✓
-          </button>
-          <button
-            v-if="auth.isAdmin && canUnpostSelected"
-            class="button button-secondary"
-            type="button"
-            title="Отменить проведение"
-            @click="changePostingSelected('unpost')"
-          >
-            ↺
-          </button>
-          <button
-            v-if="selectedIds.length === 1"
-            class="button button-secondary"
-            type="button"
-            @click="printDocument(Number(selectedIds[0]))"
-          >
-            Печать сметы
-          </button>
-          <button
-            v-if="selectedIds.length === 1"
-            class="button button-secondary"
-            type="button"
-            @click="printActDocument(Number(selectedIds[0]))"
-          >
-            Печать акта
-          </button>
-          <button
-            class="button button-danger"
-            type="button"
-            title="Удалить"
-            @click="removeSelected"
-          >
-            ✕
-          </button>
-        </SelectionActionBar>
-
         <DataTable
-          :columns="columns"
+          :columns="effectiveColumns"
           :rows="rows as Record<string, unknown>[]"
           :loading="loading"
           empty-text="Смет пока нет"
           selectable
           :selected-ids="selectedIds"
+          sortable
+          :sort="sort"
+          :filterable="filterRowVisible"
+          :filters="filters"
           @update:selected-ids="selectedIds = $event"
           @row-dblclick="handleRowDblClick"
-          @row-contextmenu="onContextMenu as any"
+          @row-contextmenu="(row, ev) => ctx.onContextMenu(row as DocListRow, ev)"
+          @sort-change="onSortChange"
+          @filter-change="onFilterChange"
         >
           <template #cell-number="{ row }">
             <RouterLink class="document-list-link" :to="`/documents/estimates/${(row as unknown as Estimate).id}`">
@@ -113,94 +73,97 @@
           <div class="table-actions">
             <button class="button button-secondary" type="button" :disabled="page <= 1" @click="page -= 1">Назад</button>
             <button class="button button-secondary" type="button" :disabled="page >= pagination.pages" @click="page += 1">
-              Вперед
+              Вперёд
             </button>
           </div>
         </div>
       </div>
     </section>
+
+    <ListSettingsDialog
+      :open="settingsOpen"
+      :columns="config.columns"
+      :states="settingsStates"
+      @close="settingsOpen = false"
+      @apply="onApplyColumns"
+      @reset="onResetColumns"
+    />
     <PrintFormatDialog
       :open="printState !== null"
       :title="printState?.action === 'act' ? 'Печать акта' : 'Печать сметы'"
       @close="printState = null"
       @select="runPrint"
     />
-    <ContextMenu :open="menuOpen" :items="menuItems" :x="menuX" :y="menuY" @close="closeMenu" @select="onMenuSelect" />
+    <ContextMenu
+      :open="ctx.menuOpen.value"
+      :items="ctx.menuItems.value"
+      :x="ctx.menuX.value"
+      :y="ctx.menuY.value"
+      @close="ctx.closeMenu()"
+      @select="ctx.onSelect"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import DataTable from '../../components/common/DataTable.vue'
 import PrintFormatDialog from '../../components/common/PrintFormatDialog.vue'
-import SelectionActionBar from '../../components/common/SelectionActionBar.vue'
-import { deleteEstimate, copyEstimate, listEstimates, postEstimate, printAct, printEstimate, restoreEstimate, unpostEstimate } from '../../api/documents'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '../../stores/auth'
-import { useHeaderBar } from '../../composables/useHeaderBar'
-import type { HeaderAction } from '../../stores/headerBar'
 import ContextMenu from '../../components/common/ContextMenu.vue'
-import { useDocumentContextMenu } from '../../composables/useDocumentContextMenu'
+import ListCommandBar from '../../components/documents/ListCommandBar.vue'
+import ListSettingsDialog from '../../components/documents/ListSettingsDialog.vue'
+import { useHeaderBar } from '../../composables/useHeaderBar'
+import { useDocumentList } from '../../composables/useDocumentList'
+import { useDocumentListContextMenu } from '../../composables/useDocumentListContextMenu'
+import { estimateListConfig } from '../../config/documentLists'
+import { printAct, printEstimate } from '../../api/documents'
 import type { Estimate } from '../../types/models'
+import type { DocListRow } from '../../config/documentListTypes'
+import type { ColumnState } from '../../composables/useListSettings'
 
 const props = defineProps<{ tabId?: string }>()
-const auth = useAuthStore()
-const router = useRouter()
+const config = estimateListConfig
+const state = useDocumentList(config)
+const ctx = useDocumentListContextMenu(config, state)
 
-const headerActions = computed<HeaderAction[]>(() => [
-  { key: 'create', icon: '+', title: 'Создать смету', variant: 'primary', to: '/documents/estimates/new' },
-])
-useHeaderBar(props.tabId, computed(() => 'Сметы'), headerActions)
-const rows = ref<Estimate[]>([])
-const loading = ref(false)
-const error = ref('')
-const search = ref('')
-const page = ref(1)
-const pagination = ref({ page: 1, pages: 1, total: 0 })
-const selectedIds = ref<string[]>([])
-let searchTimer = 0
+useHeaderBar(props.tabId, computed(() => config.title), computed(() => []))
 
-const columns = [
-  { key: 'number', label: 'Номер' },
-  { key: 'date', label: 'Дата' },
-  { key: 'customer_name', label: 'Заказчик' },
-  { key: 'object_name', label: 'Объект' },
-  { key: 'total_sum', label: 'Сумма' },
-  { key: 'is_posted', label: 'Статус' },
-]
+const {
+  rows, loading, error, search, page, pagination, selectedIds,
+  sort, filters, filterRowVisible, effectiveColumns,
+  onSortChange, onFilterChange,
+} = state
 
-const canPostSelected = computed(() => {
-  if (!selectedIds.value.length) return false
-  return selectedIds.value.every((id) => {
-    const row = rows.value.find((r) => String(r.id) === id)
-    return row && !row.is_posted
-  })
+const settingsOpen = ref(false)
+const printState = ref<{ action: 'estimate' | 'act'; id: number } | null>(null)
+
+const settingsStates = computed<ColumnState[]>(() => {
+  const saved = state.settings.savedColumns.value
+  if (saved) return saved
+  return config.columns.map((c) => ({ key: c.key, visible: c.defaultVisible !== false }))
 })
 
-const canUnpostSelected = computed(() => {
-  if (!selectedIds.value.length) return false
-  return selectedIds.value.every((id) => {
-    const row = rows.value.find((r) => String(r.id) === id)
-    return row && row.is_posted
-  })
-})
+function onApplyColumns(states: ColumnState[]) {
+  void state.settings.saveColumns(states)
+}
 
-const { menuOpen, menuX, menuY, menuItems, onContextMenu, closeMenu, onMenuSelect } = useDocumentContextMenu<Estimate>({
-  onPost: async (row) => { await postEstimate(Number(row.id)); await loadItems() },
-  onUnpost: async (row) => { await unpostEstimate(Number(row.id)); await loadItems() },
-  onDelete: async (row) => { await deleteEstimate(Number(row.id)); await loadItems() },
-  onRestore: async (row) => { await restoreEstimate(Number(row.id)); await loadItems() },
-})
+async function onResetColumns() {
+  await state.settings.resetColumns()
+}
+
+function handleRowDblClick(row: Record<string, unknown>) {
+  state.openItem((row as unknown as Estimate).id as number)
+}
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(value)
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(value ?? 0)
 }
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '—'
-  const [yearValue, monthValue, dayValue] = value.split('-').map(Number)
-  if (!yearValue || !monthValue || !dayValue) return value
-  return new Date(yearValue, monthValue - 1, dayValue).toLocaleDateString('ru-RU')
+  const [y, m, d] = value.split('-').map(Number)
+  if (!y || !m || !d) return value
+  return new Date(y, m - 1, d).toLocaleDateString('ru-RU')
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -212,134 +175,34 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-function getRowById(id: number): Estimate | undefined {
-  return rows.value.find((r) => r.id === id)
-}
-
-function openItem(id: number) {
-  router.push(`/documents/estimates/${id}`)
-}
-
-function handleRowDblClick(row: Record<string, unknown>) {
-  router.push(`/documents/estimates/${(row as unknown as Estimate).id}`)
-}
-
-async function loadItems() {
-  loading.value = true
-  error.value = ''
-  try {
-    const response = await listEstimates({
-      page: page.value,
-      page_size: 20,
-      search: search.value,
-      sort_order: 'desc',
-    })
-    rows.value = response.data
-    pagination.value = {
-      page: response.pagination?.page ?? 1,
-      pages: response.pagination?.pages ?? 1,
-      total: response.pagination?.total ?? 0,
-    }
-    selectedIds.value = []
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Ошибка загрузки'
-  } finally {
-    loading.value = false
-  }
-}
-
-async function changePostingSelected(mode: 'post' | 'unpost') {
-  if (!selectedIds.value.length) return
-  error.value = ''
-  let failed = 0
-  for (const id of selectedIds.value) {
-    try {
-      if (mode === 'post') {
-        await postEstimate(Number(id))
-      } else {
-        await unpostEstimate(Number(id))
-      }
-    } catch {
-      failed++
-    }
-  }
-  await loadItems()
-  if (failed > 0) {
-    error.value = `Не удалось изменить статус для ${failed} из ${selectedIds.value.length + failed} смет`
-  }
-}
-
-async function printDocument(id?: number) {
+function printDocument(id?: number) {
   if (!id) return
   printState.value = { action: 'estimate', id }
 }
 
-async function printActDocument(id?: number) {
+function printActDocument(id?: number) {
   if (!id) return
   printState.value = { action: 'act', id }
 }
-
-const printState = ref<{ action: 'estimate' | 'act'; id: number } | null>(null)
 
 async function runPrint(format: 'excel' | 'pdf') {
   if (!printState.value) return
   const { action, id } = printState.value
   try {
-    if (action === 'estimate') {
-      const blob = await printEstimate(id, format)
-      downloadBlob(blob, `estimate_${id}.${format === 'pdf' ? 'pdf' : 'xlsx'}`)
-    } else {
-      const blob = await printAct(id, format)
-      downloadBlob(blob, `act_${id}.${format === 'pdf' ? 'pdf' : 'xlsx'}`)
-    }
+    const blob = action === 'estimate' ? await printEstimate(id, format) : await printAct(id, format)
+    downloadBlob(blob, `${action}_${id}.${format === 'pdf' ? 'pdf' : 'xlsx'}`)
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Не удалось сформировать печатную форму'
+  } finally {
+    printState.value = null
   }
 }
-
-async function copyItem(id?: number) {
-  if (!id) return
-  try {
-    const response = await copyEstimate(id)
-    await router.push(`/documents/estimates/${response.data.id}`)
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Не удалось скопировать смету'
-  }
-}
-
-async function removeSelected() {
-  if (!selectedIds.value.length) return
-  const label = selectedIds.value.length === 1 ? 'смету' : `${selectedIds.value.length} смет`
-  if (!window.confirm(`Пометить ${label} на удаление?`)) return
-
-  error.value = ''
-  let failed = 0
-  for (const id of selectedIds.value) {
-    try {
-      await deleteEstimate(Number(id))
-    } catch {
-      failed++
-    }
-  }
-  await loadItems()
-  if (failed > 0) {
-    error.value = `Не удалось удалить ${failed} из ${selectedIds.value.length + failed} смет`
-  }
-}
-
-watch(page, loadItems)
-watch(search, () => {
-  window.clearTimeout(searchTimer)
-  searchTimer = window.setTimeout(() => {
-    page.value = 1
-    loadItems()
-  }, 300)
-})
-
-onMounted(loadItems)
 </script>
 
 <style scoped>
+.search-row {
+  margin-bottom: 0.75rem;
+}
 .pagination-row {
   justify-content: space-between;
   margin-top: 1rem;

@@ -292,3 +292,97 @@ and list views now use `auth.canManageCost` instead of `auth.isAdmin`.
 | Medium | 9 | 4 | 5 |
 | Low | 9 | 0 | 9 |
 | **Total** | **31** | **17** | **14** |
+
+---
+
+# Document List Framework — DOCUMENT_LIST_SPEC.md Implementation
+
+Date: 2026-08-01
+Spec: [DOCUMENT_LIST_SPEC.md](file:///f:/2026f/ctm3/CTM2_recovered/DOCUMENT_LIST_SPEC.md)
+
+## Goal
+
+Unify all 11 document list views to match 1C 8.3 thin-client dynamic list behavior:
+server-side sorting, quick filter row, user-saved column settings, unified command bar,
+context menu with submenus, and "Create on basis" (Ввод на основании).
+
+## What was done
+
+### Backend — server-side sort + quick filter + user settings + based_on columns
+
+| Area | Files | Changes |
+|------|-------|---------|
+| Sort/filter helpers | [list_query.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/list_query.py) (new) | `resolve_sort` (whitelist), `order_by_clause` (tiebreaker by id), `apply_quick_filters` (field→sql_col map), `parse_quick_filters` (extracts `f_*` from query) |
+| Cost-accounting lists | [cost_accounting_services.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/cost_accounting_services.py) | 5 list functions got `sort_by/sort_order/filters` params |
+| Goods lists | [goods_services.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/goods_services.py) | `_list_documents` extended with sort/filter |
+| Payment lists | [payment_services.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/payment_services.py) | schedules + transactions got sort/filter |
+| Document lists | [services.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/services.py) | list_estimates, list_daily_reports, list_timesheets got `filters` (sort was already there) |
+| Routers | [cost_accounting.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/routers/cost_accounting.py), [goods.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/routers/goods.py), [payments.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/routers/payments.py), [documents.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/routers/documents.py) | All list endpoints accept `sort_by/sort_order` + `Request`, parse `f_*` via `parse_quick_filters` |
+| User settings API | [system.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/routers/system.py) | GET/PUT/DELETE `/api/system/user-settings/{form_name}[/{key}]` with upsert via `ON CONFLICT` |
+| based_on columns | [database.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/database.py) | `_ensure_based_on_columns` — adds `based_on_type/id/number` to 7 result tables via ALTER |
+
+### Frontend — unified declarative list framework
+
+| Component / module | File | Purpose |
+|--------------------|------|---------|
+| DataTable | [DataTable.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/components/common/DataTable.vue) | Rewritten: sortable headers (▲▼ cycle asc→desc→null), filter row (text/number/date/month/select), marked-for-deletion row styling |
+| ContextMenu | [ContextMenu.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/components/common/ContextMenu.vue) | Rewritten: unified item interface with `type:'separator'` + one-level `submenu`, viewport-clamped positioning |
+| ListCommandBar | [ListCommandBar.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/components/documents/ListCommandBar.vue) (new) | Unified command panel: Create/Open/Copy/Post/Unpost/Delete, "Ввод на основании" dropdown, Filter/Settings/Refresh |
+| ListSettingsDialog | [ListSettingsDialog.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/components/documents/ListSettingsDialog.vue) (new) | Column visibility checkboxes, Up/Down order, Reset to default |
+| useDocumentList | [useDocumentList.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/composables/useDocumentList.ts) (new) | State, server load (sort+filters), sort cycle with settings save, selection, posting/delete commands, `openBaseOn()` |
+| useListSettings | [useListSettings.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/composables/useListSettings.ts) (new) | `effectiveColumns`, `effectiveSort`, `saveColumns/saveSort/resetColumns` with debounce, load on mount |
+| useDocumentListContextMenu | [useDocumentListContextMenu.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/composables/useDocumentListContextMenu.ts) (new) | Builds menu with submenu + separators, dispatches `based_on/<kind>` |
+| Config types | [documentListTypes.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/config/documentListTypes.ts) (new) | `DocListConfig`, `DocListColumn`, `DocListApi`, `BaseOnTarget`, predicates |
+| 11 list configs | [documentLists.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/config/documentLists.ts) (new) | One config per doc kind: columns, API, routes, baseOn registry |
+| System API | [system.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/api/system.ts) | `getUserSettings/putUserSettings/deleteUserSetting` |
+
+### Frontend — 11 ListView views converted
+
+All use the unified template: `page-shell → panel → search-row → ListCommandBar → DataTable → pagination → ListSettingsDialog → ContextMenu`.
+
+| View | Special features preserved |
+|------|---------------------------|
+| [EstimateListView.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/views/documents/EstimateListView.vue) | Print (estimate + act), PrintFormatDialog |
+| [DailyReportListView.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/views/documents/DailyReportListView.vue) | Print |
+| [TimesheetListView.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/views/documents/TimesheetListView.vue) | Print, role-based `canManagePosting` for foreman |
+| [MaterialConsumptionListView.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/views/documents/MaterialConsumptionListView.vue) | — |
+| [MachineryUsageListView.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/views/documents/MachineryUsageListView.vue) | — |
+| [SubcontractAcceptanceListView.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/views/documents/SubcontractAcceptanceListView.vue) | — |
+| [OverheadExpenseListView.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/views/documents/OverheadExpenseListView.vue) | Distribution block (`distributeOverhead`/`cancel`) |
+| [CostCalculationListView.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/views/documents/CostCalculationListView.vue) | Status state-machine, "Calculate" button |
+| [GoodsDocumentListView.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/views/goods/GoodsDocumentListView.vue) | computed config from `props.kind` |
+| [PaymentScheduleListView.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/views/payments/PaymentScheduleListView.vue) | formatNumber totals |
+| [PaymentTransactionListView.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/views/payments/PaymentTransactionListView.vue) | `canOpen:false`, inline create form |
+
+### "Create on basis" (Ввод на основании) — section 3.6
+
+| Part | File | What |
+|------|------|------|
+| Navigation | useDocumentList.`openBaseOn()` | router.push with `based_on_type/id/number` query |
+| Prefill composable | [useBasedOnPrefill.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/composables/useBasedOnPrefill.ts) (new) | Reads query params, loads source doc by kind, normalizes common requisites |
+| Prefill in forms | DailyReportFormView, TimesheetFormView, MaterialConsumptionFormView, MachineryUsageFormView, PaymentScheduleFormView, GoodsDocumentFormView | onMounted prefill of header requisites + `based_on_*` fields into payload |
+| Model types | [models.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/types/models.ts), [costAccounting.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/types/costAccounting.ts) | `based_on_type/id/number` optional fields on 7 result types |
+
+### AppHeader fix
+
+[AppHeader.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/components/layout/AppHeader.vue) — header toolbar now renders actions via `<component :is>` with visible labels and glyphs instead of bare icon squares.
+
+### Router fix
+
+[index.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/router/index.ts) — `/goods/issues` now passes `props: { kind: 'issue' }` (previously rendered as receipt).
+
+## Verification
+
+| Check | Command | Result |
+|-------|---------|--------|
+| Frontend types | `npx vue-tsc --noEmit` | ✅ 0 errors |
+| Frontend build | `npx vite build` | ✅ built in 4.34s |
+| Backend syntax | `py_compile` on all changed .py | ✅ 0 errors |
+
+## Deferred (spec section 8)
+
+- О1 Multiple sort (Shift+click) — out of scope
+- О2 Filter persistence — not saved by default
+- О3 Full "Selection & Sort" dialog — separate iteration
+- О4 Column resize — separate iteration
+- О6 Tabular part transfer on "Create on basis" — header only; lines remain manual

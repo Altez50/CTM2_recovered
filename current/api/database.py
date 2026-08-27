@@ -1309,6 +1309,15 @@ def _ensure_based_on_columns(connection: sqlite3.Connection) -> None:
         _ensure_column(connection, table_name, "based_on_number", "TEXT")
 
 
+def _ensure_cost_contract_columns(connection: sqlite3.Connection) -> None:
+    """Добавить измерение «Договор» (contract_id) в регистры учёта затрат.
+    Nullable для обратной совместимости; заполняется из estimates.contract_id."""
+    for table_name in ("actual_costs", "planned_costs", "completed_works_cost", "overhead_distribution"):
+        if not _table_exists(connection, table_name):
+            continue
+        _ensure_column(connection, table_name, "contract_id", "INTEGER")
+
+
 def ensure_runtime_schema(connection: sqlite3.Connection) -> None:
     for table_name in UUID_READY_TABLES:
         _ensure_sync_columns(connection, table_name)
@@ -1358,6 +1367,7 @@ def ensure_runtime_schema(connection: sqlite3.Connection) -> None:
 
     _set_constant(connection, "schema.version", SYNC_SCHEMA_VERSION)
     _ensure_based_on_columns(connection)
+    _ensure_cost_contract_columns(connection)
     seed_runtime_catalogs(connection)
     _seed_cost_accounting_catalogs(connection)
     ensure_local_sync_node(connection)

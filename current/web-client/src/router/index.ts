@@ -302,6 +302,12 @@ const router = createRouter({
           name: 'sync',
           component: () => import('../views/SyncView.vue'),
         },
+        {
+          path: 'engineering/tables',
+          name: 'engineering-tables',
+          component: () => import('../views/engineering/TablesView.vue'),
+          meta: { requiresAdmin: true },
+        },
       ],
     },
   ],
@@ -316,6 +322,10 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.guestOnly && auth.isAuthenticated) {
+    return { name: 'dashboard' }
+  }
+
+  if (to.meta.requiresAdmin && !auth.isAdmin) {
     return { name: 'dashboard' }
   }
 

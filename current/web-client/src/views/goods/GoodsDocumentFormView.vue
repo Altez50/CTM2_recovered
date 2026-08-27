@@ -17,7 +17,6 @@
               v-model="form.organization_id"
               :selected-label="orgLabel"
               :disabled="isPosted"
-              compact
               title="Выбор организации"
               search-placeholder="Поиск организации…"
               :load-page="loadOrgs"
@@ -28,7 +27,6 @@
               v-model="form.counterparty_id"
               :selected-label="cpLabel"
               :disabled="isPosted"
-              compact
               title="Выбор контрагента"
               search-placeholder="Поиск контрагента…"
               :load-page="loadCounterparties"
@@ -39,7 +37,6 @@
               v-model="form.contract_id"
               :selected-label="contractLabel"
               :disabled="isPosted"
-              compact
               title="Выбор договора"
               search-placeholder="Поиск договора…"
               :load-page="loadContracts"
@@ -50,7 +47,6 @@
               v-model="form.object_id"
               :selected-label="objectLabel"
               :disabled="isPosted"
-              compact
               title="Выбор объекта"
               search-placeholder="Поиск объекта…"
               :load-page="loadObjects"
@@ -325,13 +321,24 @@ async function createMissingMaterials() {
 
 async function post() {
   if (!form.id) return
+  loading.value = true
+  error.value = ''
+  info.value = ''
   try {
+    // 1С-поведение: перед проведением записать форму, иначе несохранённые правки теряются
+    const payload = buildPayload()
+    const res = await updateGoodsDocument(props.kind, form.id, payload)
+    form.id = res.data.id
+    form.number = res.data.number
+    isPosted.value = res.data.is_posted
     await postGoodsDocument(props.kind, form.id, form.auto_schedule)
     isPosted.value = true
     await loadDocument(form.id)
     info.value = 'Документ проведён'
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Ошибка проведения'
+  } finally {
+    loading.value = false
   }
 }
 

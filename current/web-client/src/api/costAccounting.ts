@@ -5,6 +5,8 @@ import type {
   CostCardResponse,
   CostElement,
   DeviationsReportResponse,
+  DrilldownQuery,
+  DrilldownResponse,
   LimitCheckResponse,
   Machine,
   MachineryUsageReport,
@@ -355,9 +357,13 @@ export function getCostDeviations(period: string, threshold: number = 0, objectI
   )
 }
 
-export function getCostProfitability(period?: string | null) {
+export function getCostProfitability(
+  period?: string | null,
+  groupBy: 'object' | 'contract' | 'object_contract' = 'object',
+) {
   const params = new URLSearchParams()
   if (period) params.set('period', period)
+  params.set('group_by', groupBy)
   const qs = params.toString()
   return apiRequest<ApiResponse<ProfitabilityReportResponse>>(
     `/api/cost/reports/cost-profitability${qs ? `?${qs}` : ''}`,
@@ -415,4 +421,36 @@ export function exportDocumentText(
   format: 'tsv' | 'json' | 'xlsx',
 ): Promise<Blob> {
   return downloadRequest(`/api/cost/${kind}/${docId}/export-text?format=${format}`)
+}
+
+// ── Drilldown (COST_DRILLDOWN_SPEC.md §6.4) ───────────────────────────────
+
+export function getActualCostsDrilldown(
+  params: DrilldownQuery,
+): Promise<ApiResponse<DrilldownResponse>> {
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+  })
+  return apiRequest(`/api/cost/drilldown/actual-costs?${qs}`)
+}
+
+export function getPlannedCostsDrilldown(
+  params: DrilldownQuery,
+): Promise<ApiResponse<DrilldownResponse>> {
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+  })
+  return apiRequest(`/api/cost/drilldown/planned-costs?${qs}`)
+}
+
+export function getOverheadDrilldown(
+  params: DrilldownQuery,
+): Promise<ApiResponse<DrilldownResponse>> {
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+  })
+  return apiRequest(`/api/cost/drilldown/overhead?${qs}`)
 }

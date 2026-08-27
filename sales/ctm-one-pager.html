@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CTM — оперативный учёт для строительного подрядчика</title>
+<style>
+  :root{
+    --ink:#1e293b;
+    --muted:#64748b;
+    --accent:#d97706;
+    --accent-soft:#fef3c7;
+    --line:#e2e8f0;
+    --bg:#f8fafc;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+    line-height:1.45;
+    font-size:14px;
+  }
+  .page{
+    max-width:210mm;
+    margin:0 auto;
+    background:#fff;
+    padding:10mm 12mm;
+    box-shadow:0 1px 12px rgba(15,23,42,.08);
+  }
+
+  /* Header */
+  .top{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--accent);padding-bottom:10px}
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .brand .logo{font-size:30px;font-weight:800;letter-spacing:.5px;color:var(--ink)}
+  .brand .logo span{color:var(--accent)}
+  .brand .tag{font-size:12px;color:var(--muted)}
+  .badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .badge{font-size:11px;font-weight:600;border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:2px 10px;white-space:nowrap}
+
+  /* Hero */
+  .hero{padding:14px 0 12px;border-bottom:1px solid var(--line)}
+  .hero h1{font-size:24px;font-weight:800;letter-spacing:-.2px}
+  .hero p{margin-top:6px;font-size:14px;color:var(--muted);max-width:640px}
+
+  h2{font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);margin:16px 0 8px}
+
+  /* Cards */
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .card{border:1px solid var(--line);border-radius:8px;padding:9px 10px;background:#fff}
+  .card b{display:block;font-size:12.5px;margin-bottom:3px}
+  .card span{font-size:11.5px;color:var(--muted);display:block}
+
+  /* Compare */
+  .compare{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .cmp{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--bg)}
+  .cmp b{display:block;font-size:12.5px;margin-bottom:4px;color:var(--ink)}
+  .cmp span{font-size:11.5px;color:var(--muted)}
+
+  /* Everyday list */
+  .cols2{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}
+  ul.check{list-style:none}
+  ul.check li{font-size:12.5px;padding-left:18px;position:relative;margin-bottom:3px}
+  ul.check li::before{content:"✓";position:absolute;left:0;color:var(--accent);font-weight:800}
+
+  /* Roadmap chips */
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:11.5px;background:var(--accent-soft);border:1px solid #fcd34d;color:#92400e;border-radius:6px;padding:3px 10px;font-weight:600}
+
+  /* Footer */
+  .footer{margin-top:16px;border-top:1px solid var(--line);padding-top:10px;display:flex;justify-content:space-between;align-items:center;gap:16px}
+  .footer .cta{font-size:13px;font-weight:700}
+  .footer .cta small{display:block;font-weight:400;color:var(--muted);font-size:11.5px;margin-top:2px}
+  .contacts{font-size:11.5px;color:var(--muted);text-align:right}
+
+  @media print{
+    body{background:#fff;font-size:12px}
+    .page{box-shadow:none;max-width:none;padding:8mm 10mm}
+    @page{size:A4;margin:8mm}
+    .no-break{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="top">
+    <div class="brand">
+      <div class="logo">CT<span>M</span></div>
+      <div class="tag">строительный оперативный учёт</div>
+    </div>
+    <div class="badges">
+      <div class="badge">Без внедрения 1С:ERP</div>
+      <div class="badge">Работает офлайн</div>
+      <div class="badge">Импорт из 1С и Excel</div>
+    </div>
+  </div>
+
+  <div class="hero">
+    <h1>План/факт по объектам, материалы, люди и деньги — в одной системе</h1>
+    <p>CTM закрывает оперативный учёт подрядчика: от дневного отчёта прораба до рентабельности объекта и платёжного календаря. Стартуете на своей базе из 1С и Excel — без месяцев внедрения и обучения.</p>
+  </div>
+
+  <h2>Что закрывает</h2>
+  <div class="grid no-break">
+    <div class="card"><b>Сметы и акты</b><span>Иерархические сметы из каталога работ, печать сметы и актов (PDF/Excel)</span></div>
+    <div class="card"><b>Дневные отчёты прораба</b><span>Факт по работам и исполнителям, заполнение из сметы, акт выполненных работ одной кнопкой</span></div>
+    <div class="card"><b>Табели за минуты</b><span>Сетка часов по дням, автозаполнение из дневных отчётов, импорт из Excel со сверкой людей</span></div>
+    <div class="card"><b>Материалы: лимит vs факт</b><span>Нормы из спецификаций, остатки по объектам, отрицательные остатки подсвечены</span></div>
+    <div class="card"><b>Механизмы и субподряд</b><span>Рапорты машин (маш.-час, ЗП оператора), акты субподрядчиков по работам</span></div>
+    <div class="card"><b>Себестоимость и рентабельность</b><span>Расчёт план/факт по элементам затрат, прибыль и маржа объекта и договора</span></div>
+    <div class="card"><b>Платёжный календарь</b><span>План/факт платежей, автоподбор (этапы, зарплата, поставщики), кассовый поток по дням</span></div>
+    <div class="card"><b>Взаиморасчёты</b><span>Дебиторка/кредиторка, просрочки с учётом отсрочек по договорам</span></div>
+  </div>
+
+  <h2>Почему не Excel и не 1С</h2>
+  <div class="compare no-break">
+    <div class="cmp"><b>Вместо Excel</b><span>Единая база вместо десятка файлов; из любой цифры отчёта — проваливание до исходного документа; роли и история изменений</span></div>
+    <div class="cmp"><b>Вместо 1С:ERP</b><span>Внедрение за дни, а не месяцы; прорабу не нужно знать 1С; оперативный контур рядом с бухгалтерией + обмен данными</span></div>
+    <div class="cmp"><b>Вместо «пока никак»</b><span>Перерасход виден до конца объекта, кассовый разрыв — за неделю до зарплаты, а не по факту</span></div>
+  </div>
+
+  <h2>Чем удобен каждый день</h2>
+  <div class="cols2">
+    <ul class="check">
+      <li>Веб-интерфейс с вкладками как в браузере, настройка колонок под себя</li>
+      <li>Ввод на основании и копирование: смета → отчёт → табель → платёжка</li>
+      <li>Обмен с Excel: импорт/экспорт табличных частей любых документов</li>
+    </ul>
+    <ul class="check">
+      <li>Печать: смета, акт, дневной отчёт, табель унифицированной формы</li>
+      <li>Роли: директор — всё, менеджер — документы, прораб — только свои объекты</li>
+      <li>Объект работает офлайн, офис — онлайн; синхронизация пакетами</li>
+    </ul>
+  </div>
+
+  <h2>Развивается вместе с вами</h2>
+  <div class="chips">
+    <div class="chip">КС-2 / КС-3 и ЭДО (Диадок, СБИС)</div>
+    <div class="chip">Банковские выписки и подача платежей</div>
+    <div class="chip">Обмен с 1С:Бухгалтерией</div>
+    <div class="chip">Мобильное приложение прораба</div>
+    <div clasThe user is asking in Russian about CTM ERP product capabilities. They're clarifying that "ERP" means the CTM product (the project in the working directory f:\2026f\ctm3\CTM2_recovered), not 1C ERP. They want:
+
+1. A list of all ERP capabilities as for a customer (construction contractor without 1C ERP or needing operational accounting) - what it can do
+2. Second block - how it can be enhanced/integrated - "if you refine it, it will also be able to do this, this and this"
+
+They're gathering info to talk with end consumers to identify pains and needs, to make a USP (unique selling proposition) for selling the product.
+
+So I need to explore the CTM2_recovered codebase to understand what the CTM product is and what it does. This is a broad exploration task, so I should use the Task tool with subagent_type="explore" or search.
+
+Let me first look at the project structure to understand what CTM is. This is a construction management tool presumably (CTM = Construction Task Management or similar).
+
+Let me launch an explore agent to understand the codebase, or I could do a quick LS first to see the structure. Given the request is about gathering comprehensive product capabilities, I need to understand the codebase deeply. Let me use the Task tool with explore subagent.
+
+Actually, let me first do a quick LS to see what's there, then decide. The task requires understanding the full product scope - modules, features. An explore agent would be good. Let me launch it.
+
+Actually let me do both: quick LS myself to get oriented, then maybe launch explore agents in parallel for different areas.
+
+Let me start with LS of the root directory.
+
+Изучу кодовую базу CTM, чтобы составить точный список возможностей продукта.
+The user wants me to describe the CTM product (as it should be in mature form after debugging) capabilities for a construction contractor customer. I need to understand the product deeply. Let me launch explore agents to gather comprehensive info about:
+
+1. The product's functional modules (documents, works, goods, payments, cost accounting, reports, engineering/tables, sync, references)
+2. Existing specs (WORKS_REGISTRY_SPEC.md, COST_DRILLDOWN_SPEC.md, DOCUMENT_LIST_SPEC.md, TEXT_IMPORT_EXPORT_SPEC.md, TABLES_ENGINEERING_SPEC.md, TESTING_PLAN.md, PROGRESS_LOG.md)
+
+Let me launch a couple of explore agents in parallel to gather this info, then compile the answer.
+
+Actually, I can read the key spec files myself and also launch explore agents. Let me do parallel: read README.md of api and web-client, plus PROGRESS_LOG.md, and launch an explore agent for the functional capabilities.
+
+Let me be efficient: launch 2 explore agents:
+1. One to catalog all functional capabilities from the backend (routers, models, services): what document types exist, what operations, what reports, references, sync, engineering tables, import from 1C.
+2. One to catalog the frontend features: views, forms, dialogs, dashboards, UX capabilities.
+
+And I'll read the spec md files myself (WORKS_REGISTRY_SPEC, COST_DRILLDOWN_SPEC, etc.) — actually maybe the agents can cover it. Let me read the README files myself quickly in parallel with the agents.
+
+Let me launch two explore agents plus read a few files.
+
+Let me start by exploring the structure of the web-client/src directory to understand the codebase layout.
+
+Let me start by exploring the API directory structure to understand the codebase.
+
+Now let me read the config files and other key files in parallel. Let me start with the config files, router, and key views.
+
+Начинаю систематическое изучение. Сначала прочитаю ключевые файлы — точку входа и роутеры документов.
+The codebase is fairly large. Let me read the key files. I'll start with the main.py to understand the overall structure, and then read routers. Let me batch read multiple files in parallel.
+
+Let me read the main files first:
+- main.py
+- routers/__init__.py
+- routers/documents.py
+- routers/works.py
+- routers/goods.py
+- routers/payments.py
+
+These could be long files. Let me read them.
+
+Now let me read the key views and components. Let me plan the reads:
+
+1. Document form views: EstimateFormView, CostCalculationFormView, DailyReportFormView, TimesheetFormView, MachineryUsageFormView, MaterialConsumptionFormView, OverheadExpenseFormView, SubcontractAcceptanceFormView, GoodsDocumentFormView, PaymentScheduleFormView
+2. References: ReferenceView, WorkCatalogView
+3. Registers: WorkExecutionView, WorkExecutionDetailDialog
+4. Reports: CostCardView, CostDeviationsView, CostProfitabilityView, CostTurnoverView, InventoryBalancesReport, OverdueReport, SettlementsTurnoverReport
+5. Payments: PaymentCalendarView, PaymentTransactionListView
+6. Dashboard: DashboardView
+7. Engineering: TablesView, EngineeringTableTree, TablesConsole
+8. UX: WorkspaceTabs, ContextMenu, useDocumentList, useListSettings, useUiDensity, EntityPicker, DataTable, ListSettingsDialog, ListCommandBar, SelectionActionBar, useDocumentContextMenu, PrintFormatDialog
+9. Sync: SyncView
+
+That's a lot of files. Let me read them in parallel batches. Some views might be large; I'll read them fully but need to be efficient. Let me start with form views batch.
+
+Теперь прочитаю роутеры документов и работ (возможно длинные — буду читать по частям).
+Now let me read the routers. The files might be long; let me check their sizes first by reading them. Let me read documents.py, works.py, goods.py, payments.py in parallel. These may be large — I'll read them fully but with limits to avoid huge outputs. Actually, let me just read them fully — I need comprehensive coverage. Let me start with the document-related routers.
+
+Now let me read the other form views in parallel. To be efficient, I'll read the key parts of each. Some of these files are long; let me read them but I may want to limit. Let me read TimesheetFormView, CostCalculationFormView, MachineryUsageFormView, MaterialConsumptionFormView in parallel.
+
+Теперь роутеры goods, payments и settlements.
+Now let me read the goods, payments, settlements routers in parallel.
+
+Good. Now let me read the remaining form views: MachineryUsageFormView, MaterialConsumptionFormView, OverheadExpenseFormView, SubcontractAcceptanceFormView, GoodsDocumentFormView, PaymentScheduleFormView. I'll read them in parallel.
+
+Читаю settlements, registers, cost_accounting и references роутеры.
+Now let me read settlements, registers, cost_accounting routers, and references.
+
+Теперь смотрю справочники в services.py и моделях.
+Now I need to see what reference kinds exist. Let me look at services.py (list_references and REFERENCE definitions). Also read models/references.py. services.py is probably huge. Let me check its size first — I'll read it in parts. Let me also read models/references.py in parallel.
+
+Now let me read references views, registers, reports, payments calendar, dashboard, engineering, sync. Let me batch read.
+
+Теперь читаю схему БД (database.py), auth-роутер и security.
+Now let's read database.py to see the schema and REFERENCE_TABLES, and the routers/auth.py + security.py + auth_dependencies.py. Let me also check routers/sync.py, routers/system.py, routers/engineering.py. Let me batch these.
+
+Читаю sync, system, engineering роутеры и auth_dependencies.
+Now let me read the sync router, system router, and engineering router. Also auth_dependencies.py.
+
+Now the reports, payment calendar, dashboard, engineering, sync. Let me read them in parallel batches.
+
+Теперь изучу сервисные модули — выведу списки функций.
+Now let's look at the services files. First, services.py — probably a huge file. Let me check key function names with grep to understand what's in it. Also goods_services.py, payment_services.py, work_services.py, cost_accounting_services.py. Let me grep for function definitions in each.
+
+Now let me read reports views, engineering components, and UX-related components. Let me batch:
+- CostCardView
+- CostDeviationsView
+- CostProfitabilityView
+- CostTurnoverView
+- InventoryBalancesReport
+- OverdueReport
+- SettlementsTurnoverReport
+- reportExport.ts
+
+Now let me look at payment_services, work_services, cost_accounting_services function lists, plus text_import_export, printing, import_profiles, sync_runtime, sync_worker, sync_relay_bridge, and engineering_metadata.
+
+Теперь модули печати/импорта-экспорта, профилей импорта, синхронизации и engineering.
+Now let me read the printing.py, text_import_export.py, import_profiles.py, sync_runtime.py, sync_worker.py, sync_relay_bridge.py, engineering_metadata.py — headers/docstrings. Let me read the first ~100 lines of each to get docstrings, plus grep functions.
+
+Now let me read the remaining key files: SettlementsTurnoverReport, engineering components (EngineeringTableTree, TablesBrowser, TablesConsole), UX components (WorkspaceTabs, useDocumentList, useListSettings, useUiDensity, EntityPicker, ListCommandBar, ListSettingsDialog, ContextMenu, useDocumentContextMenu, DataTable, PrintFormatDialog, SelectionActionBar), CostDrilldownDialog, workCatalog api, PaymentTransactionListView, GoodsDocumentListView, document list views (EstimateListView), EstimateWorkCatalog, DocumentDataExchangeDialog, DocumentMovementsModal, workForm, ImportProfilesView, workspace store, AppSidebarNew. That's a lot — let me batch efficiently.
+
+Let me now look at the DOCUMENT_SCHEMAS in text_import_export.py — grep for it. And read import_profiles.py, sync_runtime.py header, sync_worker.py, sync_relay_bridge.py, engineering_metadata.py.
+
+Now the engineering tree/browser, UX components, and composables. Let me batch read:
+- EngineeringTableTree.vue (first 120 lines)
+- TablesBrowser.vue (first 120 lines)
+- WorkspaceTabs.vue
+- workspace store
+- useDocumentList.ts
+
+Now the UX layer: WorkspaceTabs, workspace store, useDocumentList, useListSettings, useUiDensity, useDocumentContextMenu, EntityPicker, ListCommandBar, ListSettingsDialog, DataTable, ContextMenu, PrintFormatDialog, DocumentDataExchangeDialog, DocumentMovementsModal, EstimateWorkCatalog, AppSidebarNew, CostDrilldownDialog, WorkForm, PaymentTransactionListView, ImportProfilesView, GoodsLinesEditor, TimesheetLinesEditor, useWorksRegister (export). Let me batch read these.
+
+Let me look at more of sync_runtime (process_sync_exchange), sync_worker.py, sync_relay_bridge.py, and engineering_metadata.py headers. Also the scripts folder (import_1c_dbf.py etc.). Let me read those in parallel.
+
+Now: WorkspaceTabs, workspace store, ListCommandBar, ListSettingsDialog, useListSettings, EntityPicker, DataTable (key features), PrintFormatDialog, DocumentDataExchangeDialog, DocumentMovementsModal, EstimateWorkCatalog, CostDrilldownDialog, AppSidebarNew, PaymentTransactionListView, GoodsDocumentListView, EstimateListView, WorkForm, ImportProfilesView, useWorksRegister (export part), reportExport, useBasedOnPrefill, workCatalog api. Let me batch.
+
+Now let me look at engineering_metadata.py, the scripts (import_1c_dbf.py etc.), and the reportExport mentioned by the user (reportExport — maybe in web client, but the user asked about backend; let me search for "reportExport" or "report" export in api). Also check "cost_accounting_services" reports details and cost card. Let me also check models/cost_accounting.py to understand documents' fields, and the remaining parts of database.py (registers, sync tables).
+
+"reportExport" — not in api. Perhaps it's in web client. The user asked "печать и экспорт (printing, text_import_export, reportExport)" — reportExport may be a web-client composable. Let me check web-client briefly for reportExport. But the user's task focuses on backend, but mentions reportExport explicitly. Let me search the whole current directory.
+
+Now remaining UX components and details: EntityPicker, DataTable, PrintFormatDialog, DocumentDataExchangeDialog, DocumentMovementsModal, EstimateWorkCatalog, CostDrilldownDialog, AppSidebarNew, PaymentTransactionListView, EstimateListView (as list view sample), WorkForm, useListSettings, useBasedOnPrefill, reportExport, useWorksRegister export, GoodsLinesEditor, TimesheetLinesEditor (briefly), ImportProfilesView, workCatalog api (EstimateWorkCatalog data source), useHeaderBar/headerBar store, auth store roles. Let me batch these reads.
+
+Now let me look at scripts (import_1c_dbf.py etc.), and the remaining database.py for registers and sync tables. Let me read the scripts headers and remaining database schema.
+
+Very good. Now I have a full picture of the schema. Let me check a few more important things:
+
+1. The registers table schemas (work_execution_register, payroll_register, inventory_register, mutual_settlements_register, payment_schedule_register, planned_costs, actual_costs, completed_works_cost) — quick look at columns.
+2. The dbf_importer module (import from 1C) — it's at project root, let me check dbf_importer.py existence.
+3. The remaining scripts: import_ctm_sample_specifications.py, restore_1c_specifications.py, detect_duplicate_units.py, merge_duplicate_units.py, seed_cost_test_scenario.py — read their headers.
+4. sync_runtime functions: process_sync_exchange, apply_sync_change, collect_outgoing_changes, list_conflicts, resolve_conflict, prune_sync_changes — brief look.
+5. models/cost_accounting.py for document fields.
+6. config.py for settings.
+7. db backends (sqlite/postgres) — briefly.
+
+Let me batch.
+
+Now the remaining: AppSidebarNew (navigation structure), PaymentTransactionListView (inline create), EstimateListView (as sample list view), useListSettings, PrintFormatDialog, WorkForm, DocumentMovementsModal, GoodsLinesEditor, TimesheetLinesEditor (brief), ImportProfilesView, reportExport, useBasedOnPrefill, useWorksRegister (export), auth store (roles), AppHeader. Batch reads.
+
+dbf_importer is not in current/. Let me check where it is — the script imports `from dbf_importer import CTM2DBFImporter, DEFAULT_DBF_DIRECTORY`. Maybe it's at the repo root. Let me search. Also read remaining register tables (inventory_register, mutual_settlements_register, sync tables, cost tables).
+
+Now the rest of AppSidebarNew (to see the remaining nav items: references, engineering, sync, import profiles). Let me read the rest of it. Also read useListSettings, PrintFormatDialog, WorkForm, DocumentMovementsModal, GoodsLinesEditor briefly, TimesheetLinesEditor briefly, ImportProfilesView, reportExport, useBasedOnPrefill, useWorksRegister (export), auth store.
+
+Now remaining pieces: PrintFormatDialog, WorkForm, DocumentMovementsModal, GoodsLinesEditor, TimesheetLinesEditor, ImportProfilesView, reportExport, useBasedOnPrefill, useWorksRegister export part, auth store roles, useHeaderBar/headerBar store, DataTable capabilities. Let me batch read several small files.
+
+Let me read the rest of database.py (completed_works_cost, audit_logs), and check scripts headers. Also check sync_runtime process_sync_exchange briefly, models/payments.py, models/goods.py, models/cost_accounting.py for details, and config.py. Let me batch a few greps/reads.
+
+Now let me look at the sync_runtime main functions (process_sync_exchange, apply_sync_change) briefly, and the scripts. Also models/cost_accounting.py to describe documents. Let me batch:
+- sync_runtime: grep functions
+- scripts headers (read first ~40 lines of each of: import_ctm_sample_specifications.py, restore_1c_specifications.py, detect_duplicate_units.py, merge_duplicate_units.py, seed_cost_test_scenario.py)
+
+Now a few remaining items: GoodsLinesEditor (brief), TimesheetLinesEditor (brief), ImportProfilesView (brief), reportExport (downloadCsv), useWorksRegister export, auth store (roles), headerBar store + AppHeader (density toggle etc.), WorkForm specification section (rest, briefly), useSpecificationReview (feature flag). Let me batch some quick greps/reads.
+
+Now let me check the remaining scripts briefly and the dbf_importer location. dbf_importer must be at project root (f:\2026f\ctm3\CTM2_recovered\current\dbf_importer.py?) — the glob didn't find it under CTM2_recovered. PROJECT_ROOT = Path(__file__).resolve().parents[2] → api/scripts/.. /.. = current/. So dbf_importer should be at current/dbf_importer.py. Let me check.
+
+The dbf_importer.py module is NOT in current/ — it's imported from PROJECT_ROOT (current/) but the file doesn't exist there (LS shows no dbf_importer.py at current root). So the DBF import script references an external module that may be missing in this recovered snapshot. I'll note that.
+
+Now let me read:
+1. web-client/src/utils/reportExport.ts (client-side export util) — brief.
+2. models/cost_accounting.py, models/goods.py, models/payments.py — to describe documents fields.
+3. sync_runtime process_sync_exchange (lines 2148-2260) for exchange semantics.
+4. seed_cost_test_scenario.py and merge_duplicate_units.py headers.
+5. unit_cleanup.py header.
+6. db/ backends — brief look at db/__init__.py.
+
+Batch these.
+
+Now, final pieces:
+- reportExport.ts (CSV export util)
+- useWorksRegister.ts (export capability for register)
+- auth store (roles)
+- headerBar store / AppHeader (workspace header actions, user menu, density?)
+- useSpecificationReview (feature flag)
+- ImportProfilesView (brief)
+- RegisterCommandBar (export menu)
+- DataTable (features summary — sortable, filters, selectable, contextmenu, row-dblclick)
+- GoodsDocumentListView (brief — uses config)
+- workCatalog api (search, cache)
+- ExecutorPicker (multi-select)
+- WorkPicker
+
+Let me batch read the small ones.
+
+Almost done. Let me quickly check:
+1. models/cost_accounting.py (fields of cost docs) — read a portion.
+2. models/goods.py and models/payments.py — brief.
+3. seed_cost_test_scenario.py and merge_duplicate_units.py headers.
+4. db/__init__.py to note Postgres support.
+5. Also useBasedOnPrefill composable — "на основе" (based on) feature mentioned by user ("копирование, на основе"). Let me check useBasedOnPrefill.ts and useDocumentContextMenu.ts briefly to understand "copy" and "based on" operations on client. The user asked mainly about backend but also client-side features like "на основе" prefill. Let me quickly check.
+
+Now I have a comprehensive picture. A couple more things to verify quickly:
+
+1. seed_cost_test_scenario.py and merge_duplicate_units.py — headers (brief).
+2. db/__init__.py — postgres backend support.
+3. goods_services: _try_auto_schedule — auto payment schedule creation on posting goods docs. Already saw references. Let me check briefly lines 735-820.
+4. query_work_execution register logic (registers.py) — already understood from router.
+5. dashboard_summary — brief look at services.py lines 1543-1622.
+6. The daily report executors table — daily_report_executors. And estimate fields.
+
+Let me read a few key service fragments in parallel.
+
+Almost done. A few last ones quickly: ImportProfilesView (brief), AppHeader (user menu, logout, density), useSpecificationReview, GoodsDocumentListView (brief), DataTable (props overview briefly — I've seen usage), workCatalog api (brief), useDocumentDensity, ExecutorPicker (brief), headerBar store. Let me do a final batch.
+
+I now have a comprehensive picture. A few last quick checks to be thorough:
+
+1. seed_cost_test_scenario.py header and merge_duplicate_units.py header — quick.
+2. db/__init__.py — backend selection.
+3. The "works" list endpoints — wait, is there a /api/works list endpoint? The works router has GET /api/works/{work_id} but list of works is via references (kind=works). OK.
+4. unit_cleanup.py header.
+
+Let me do these final quick reads.
+
+I have enough to write the summary. Let me quickly check two more small things: useSpecificationReview (feature flag) and GoodsDocumentListView (just to confirm it uses config pattern), and the workCatalog api. Quick batch — actually GoodsDocumentListView I can infer (uses goodsDocumentListConfig(kind)). Let me quickly read useSpecificationReview and check the EstimateDataExchangeDialog briefly (import for estimate lines) — and check api/workCatalog for search. Keep it short.
+
+Изучение завершено — просмотрены все роутеры, сервисный слой, схема БД, скрипты импорта и модули синхронизации. Ниже полный каталог функциональных возможностей.
+
+---
+
+# Каталог функциональных возможностей CTM (backend, оперативный учёт подрядчика строительства)
+
+**Ядро:** FastAPI-приложение `f:\2026f\ctm3\CTM2_recovered\current\api\main.py` — 12 роутеров, отдача Vue-SPA, gzip-сжатие запросов/ответов в обе стороны (для пакетов синхронизации). СУБД: SQLite по умолчанию, PostgreSQL через DBAL (`api\db\__init__.py`, `api\config.py`: `DB_TYPE`, `POSTGRES_*`). Полная схема БД — `api\database.py` (53 таблицы + индексы).
+
+---
+
+## 1. Документы (оперативный учёт)
+
+Общие операции для документов: **список с пагинацией/поиском/сортировкой/быстрыми отборами (`f_<поле>`, `api\list_query.py`), создание, чтение, изменение, пометка удаления (`marked_for_deletion`), восстановление, проведение/распроведение (`post`/`unpost`), копирование, печать, импорт/экспорт табличной части, «ввод на основании» (клиент: `web-client\src\composables\useBasedOnPrefill.ts` — перенос шапки документа-основания в новый документ)**.
+
+### 1.1. Сметы (Estimates) — `api\routers\documents.py`, `api\services.py`
+- Шапка: номер (автонумерация), дата, заказчик, объект, подрядчик, договор, ответственный; итоги по сумме и трудоёмкости; строки — иерархия (группы `is_group`/`group_name`), работа, кол-во, ед., цена, трудоёмкость, плановая трудоёмкость.
+- **Проведение** (`post_estimate`): фиксирует итоги, записи «приход» в регистр исполнения работ; `unpost` — отменяет.
+- **Печать**: форма сметы (PDF/Excel с лимитированными колонками, накладные 22%, прибыль 12%) и **акт** по смете (`build_estimate_print`, `build_act_print`).
+- **Копирование**, **импорт/экспорт строк** TSV/JSON/XLSX (`import-text`/`export-text`, автосоздание работ и единиц, импорт групп).
+- **Ввод на основании**: из сметы создаётся дневной отчёт с предзаполненными строками (`_daily_report_lines_from_estimate`).
+
+### 1.2. Дневные отчёты (Daily reports) — там же
+- Шапка: объект, смета, прораб, дата, погодные условия; строки — работа, факт кол-во, сумма (цена берётся из сметы по работе, `_resolve_work_price`), исполнители (`daily_report_executors`).
+- **Проведение** → записи «расход» в регистр исполнения работ; **печать** дневного отчёта и **акта выполненных работ** по нему; копирование; восстановление; текстовый импорт/экспорт.
+
+### 1.3. Табели учёта рабочего времени (Timesheets) — там же
+- Шапка: объект, смета, прораб, месяц (`month_year`); строки — сотрудник, часовая ставка, часы по дням 01–31, итоги часов/суммы.
+- **Автозаполнение** (`/timesheets/autofill`): генерация строк из дневных отчётов за месяц с распределением часов (`autofill_timesheet_lines`, `_distribute_hours`).
+- **Проведение** (`post_timesheet`) → записи в регистр зарплаты (`payroll_register`), защита от дублей (`_find_timesheet_payroll_duplicates`).
+- **Печать** унифицированной формы (XLSX-шаблон с переносом стилей, `_build_timesheet_excel_content`; PDF), **экспорт** JSON/Excel, **импорт XLSX с предпросмотром** (`/timesheets/import-preview` — разбор заголовков периодов, cp1251-мojibake-толерантность), копирование. Табель допустим без сметы.
+
+### 1.4. Поступления и реализации ТМЦ (Goods receipts / issues) — `api\routers\goods.py`, `api\goods_services.py`
+- Шапка: организация, контрагент, договор, объект, склад; строки — материал, кол-во, цена без НДС, ставка НДС, суммы с/без НДС (авторасчёт итогов, `_compute_line_totals`).
+- **Проведение** (`post_goods_receipt`/`post_goods_issue`, только admin): движения в регистры **инвентаризации** (`inventory_register`) и **взаиморасчётов** (`mutual_settlements_register`, начисление по сроку с учётом отсрочки платежа из договора `_contract_deferral_days`).
+- **Автографик платежей**: при проведении `auto_schedule=True` в непроведённый график платежей добавляется строка (поставщику — расход, от заказчика — приход) с датой = дата документа + отсрочка договора (`_try_auto_schedule`).
+- Копирование, экспорт строк в Excel, импорт строк XLSX с предпросмотром и **профилями сопоставления колонок** (`import_profiles.py` — профили хранятся в `constants`, синхронизируются между узлами).
+- **Просмотр движений документа**: `/api/goods/{kind}/{id}/movements` — все движения регистров (инвентаризация + взаиморасчёты), порождённые документом.
+
+### 1.5. Графики платежей (Payment schedules) — `api\routers\payments.py`, `api\payment_services.py`
+- Шапка: период с…по, объект, договор, ответственный; строки: направление (incoming/outgoing), категория, плановая дата, контрагент, договор, смета, объект, плановая сумма, описание, признак источника (`source_kind`/`source_ref`), **иерархия строк** (группы, свёртка).
+- **Проведение** → регистр исполнения графика (`payment_schedule_register`: план/факт по строкам, `fact_amount`).
+- **Автоподбор строк (превью)**: из регистра исполнения работ (приход от заказчиков), из регистра зарплаты (зарплата), из поступлений ТМЦ (платежи поставщикам), из реализаций ТМЦ (поступления от заказчиков).
+
+### 1.6. Платёжные документы (Payment transactions) — там же
+- Реквизиты: дата, направление, категория, контрагент, договор, смета, объект, связь со строкой графика (`linked_schedule_id`/`linked_line_id`), сумма.
+- **Проведение** → движения в регистр взаиморасчётов (оплата, `apply_payment_to_settlements`); **контроль «оплата не больше начислений»** (`_assert_payment_within_accruals`); просмотр движений документа.
+
+### 1.7. Документы учёта затрат (Cost accounting) — `api\routers\cost_accounting.py`, `api\cost_accounting_services.py`
+- **Расход материалов** (material-consumptions): строки работа/материал/план-факт кол-во/цена/сумма/элемент затрат; post/unpost/restore.
+- **Использование машин** (machinery-usage-reports): строки машина/работа/часы/стоимость машино-часа/зарплата оператора; post/unpost/restore.
+- **Субподрядные акты** (subcontract-acceptances): строки работа/субподрядчик/сумма/описание/ед.; post/unpost/restore.
+- **Накладные расходы** (overhead-expenses): период, строки элемент затрат/контрагент/сумма; **распределение накладных** по объектам/работам по выбранной базе (`/overhead/distribute`, отмена `/overhead/cancel-distribution`; базы: `allocation_bases`).
+- **Калькуляции себестоимости** (cost-calculations): объект, период; **расчёт** (`/calculate`) строит `planned_costs`, `actual_costs`, `completed_works_cost` (кол-во, плановая/фактическая себестоимость, отклонение, договорная стоимость, прибыль); post/unpost.
+- Все табличные документы: текстовый импорт/экспорт TSV/JSON/XLSX с автосозданием справочников (`text_import_export.py`, `DOCUMENT_SCHEMAS`).
+
+---
+
+## 2. Справочники (references)
+
+Роутер `api\routers\references.py` (единый CRUD: список с пагинацией/поиском/сортировкой/отбором по `review_status`, чтение, создание, изменение, пометка удаления). Модели и валидация — `api\models\references.py`:
+
+| Справочник | Назначение / ключевые поля |
+|---|---|
+| **Контрагенты** (counterparties) | ИНН, контактное лицо, телефон, иерархия групп |
+| **Объекты строительства** (objects) | Адрес, владелец (контрагент), иерархия |
+| **Виды работ** (works) | Код, единица, цена, трудоёмкость, статус проверки спецификации (ok/incorrect/corrected), иерархия; расширенный CRUD и детали в `api\routers\works.py` |
+| **Физлица** (persons) | ФИО, табельный номер, должность, телефон, часовая ставка, привязка к пользователю, иерархия |
+| **Организации** (organizations) | ИНН, ответственный по умолчанию, иерархия |
+| **Договоры** (contracts) | Номер, дата, контрагент, организация, сумма, вид, валюта, ставка НДС, **отсрочка платежа в днях**, срок действия, описание |
+| **Материалы** (materials) | Код, единица, цена (CRUD в `api\routers\works.py`: `/api/materials`) |
+| **Единицы измерения** (units) | Наименование, краткое; `/api/units` с нормализацией имён (`work_services._normalize_unit_name`); дедупликация — `api\unit_cleanup.py`, скрипты `detect_duplicate_units.py` / `merge_duplicate_units.py` |
+
+**Спецификации работ** (нормы расхода: материал/труд/машины/прочее на единицу работы) — `api\routers\works.py` + `api\work_services.py`: просмотр, **копирование из другой работы** (с превью), **импорт XLSX с превью и созданием материалов**, экспорт в Excel, **экспорт «проблемных» спецификаций** (`export-flagged` по статусу проверки), **импорт исправлений** (файл корректировок), массовая **пометка работ с проблемами импорта**. Статус «проверка спецификаций» вкл./выкл. по пользователю (user_settings, `use_specification_review`).
+
+**Справочники учёта затрат** (в cost-роутере): элементы затрат (`cost_elements`, предопределённые + свои, прямой/косвенный), базы распределения (`allocation_bases`), машины (`machines`: стоимость маш.-часа, ставка оператора).
+
+---
+
+## 3. Регистры (учёт исполнения)
+
+Физические таблицы `api\database.py`; движение формируют операции проведения документов (принцип «регистратор»):
+
+- **Регистр исполнения работ** (`work_execution_register`): регистратор (смета = приход, дневной отчёт = расход), период, объект/смета/работа, приход/расход кол-во и суммы. Запрос: `api\routers\registers.py` `/api/registers/work-execution` — фильтры (период, объект, смета, работа, заказчик, договор, быстрые отборы), **группировка** (`group_by`), сортировка, **итоговая строка**, **экспорт CSV (BOM, «;») и XLS** с русской строкой «Итого». Детализация строки — клиентский `WorkExecutionDetailDialog.vue`.
+- **Регистр зарплаты** (`payroll_register`): по табелям; сотрудник, дата работы, часы, сумма.
+- **Регистр инвентаризации ТМЦ** (`inventory_register`): приход/расход материалов по объектам в количественном и суммовом выражении.
+- **Регистр взаиморасчётов** (`mutual_settlements_register`): начисления/оплаты/план по организации × контрагент × договор × объект × смета.
+- **Регистр исполнения графика платежей** (`payment_schedule_register`): план/факт по строкам графиков.
+- **Регистры учёта затрат**: `planned_costs`, `actual_costs`, `overhead_distribution`, `completed_works_cost` (см. п. 4).
+- **Движения документа** (инвентаризация + взаиморасчёты) — `/api/goods/{kind}/{id}/movements`, для платёжек `/api/payments/transactions/{id}/movements`.
+
+---
+
+## 4. Отчёты
+
+| Отчёт | Endpoint | Суть |
+|---|---|---|
+| **Карточка затрат** (cost card) | `/api/cost/reports/cost-card` | Затраты по объекту в разрезе элементов затрат за периоды (план/факт) |
+| **Оборотная ведомость затрат** | `/api/cost/reports/cost-turnover` | Обороты и сальдо по элементам затрат за период |
+| **Отклонения** | `/api/cost/reports/cost-deviations` | План vs факт с порогом отклонения в %, по объекту |
+| **Рентабельность** | `/api/cost/reports/cost-profitability` | Прибыль/рентабельность, группировка по объекту / договору / объект+договор |
+| **Drilldown фактических затрат** | `/api/cost/drilldown/actual-costs` | Расшифровка до регистратора (документа), фильтры по элементу затрат/работе/смете/договору, знак суммы, тип регистратора |
+| **Drilldown плановых затрат** | `/api/cost/drilldown/planned-costs` | То же для плана |
+| **Drilldown накладных** | `/api/cost/drilldown/overhead` | Расшифровка распределённых накладных |
+| **Остатки ТМЦ** | `/api/goods/inventory/balances` | Остатки на дату по объекту/материалу |
+| **Движения ТМЦ** | `/api/goods/inventory/movements` | Обороты за период |
+| **Просроченная задолженность** | `/api/settlements/overdue` | На дату, с учётом отсрочек договоров |
+| **Обороты взаиморасчётов** | `/api/settlements/turnover` | Обороты за период по организации/контрагенту/договору |
+| **Сальдо взаиморасчётов** | `/api/settlements/balance` | Дебиторка/кредиторка на дату |
+| **Карточка взаиморасчётов** (ledger) | `/api/settlements/ledger` | Лента операций по организации (обязательно), контрагенту, договору |
+| **Регистр платежей** | `/api/payments/register` | План/факт платежей с фильтрами, группировкой и итогами |
+| **Cashflow по дням** | `/api/payments/cashflow` | Денежный поток по дням периода |
+| **Дашборд** | `/api/dashboard/summary` | Счётчики документов/справочников, итоги регистра работ (прораб видит только своё) |
+
+Реализации — `api\cost_accounting_services.py`, `api\goods_services.py`, `api\payment_services.py`, `api\services.py`. Клиентский экспорт таблиц отчётов в CSV — `web-client\src\utils\reportExport.ts`.
+
+---
+
+## 5. Инженерный раздел «Таблицы» (engineering)
+
+`api\routers\engineering.py`, `api\engineering_metadata.py`, `api\engineering_query.py`. **Доступ только admin.**
+- **Каталог** (`/api/engineering/catalog`): все таблицы БД с бизнес-синонимами (русские наименования полей как в 1С: «Проведён», «ПометкаУдаления», «ТипРегистратора» и т.д.), категории: Справочники / Документы / Табличные части / Регистры / Справочники учёта затрат.
+- **Просмотрщик таблиц** (`/tables/{name}`): пагинация, поиск по текстовым полям, сортировка по вайтлисту колонок, быстрые отборы `f_<поле>`, автоматические **представления ссылок** (LEFT JOIN — вместо FK показывается наименование связанной записи), скрытие служебных полей (uuid, updated_at, is_deleted).
+- **Консоль запросов** (`/query`): запрос пишется на синонимах → токенизация → перевод в физические имена → валидация (только одиночный SELECT, чёрный список DML/DDL, вайтлист таблиц каталога) → read-only выполнение с защитным LIMIT (до 10 000, по умолчанию 1 000) и таймаутом 10 с → заголовки результата обратно в синонимах.
+
+---
+
+## 6. Синхронизация (офлайн/онлайн)
+
+- **Модель peer-to-peer** (офлайн-узлы SQLite, «офисный» сервер): таблицы `sync_nodes`, `sync_changes` (журнал изменений), `object_version_history` (архив версий/конфликтов); у каждой записи uuid + `updated_at` (`api\database.py`).
+- **Роутер** `api\routers\sync.py`: регистрация узла, **обмен пакетами** (`/exchange`: приём входящих с приоритетом по типу сущности (units→…→payment_transactions), применение по правилу «позже изменённая версия выигрывает», счётчики применено/пропущено/ошибки, выдача исходящих изменений), статус узлов, **чистка журнала** (`/prune` — удаление строк, полученных всеми пирами), **список конфликтов** и **принудительное разрешение** (применить удалённую версию). Проверка совместимости схемы (`SYNC_SCHEMA_VERSION`).
+- **Рантайм** `api\sync_runtime.py`: сериализация/восстановление всех сущностей (справочники, документы с табличными частями, спецификации работ), пересборка регистров после применения (исполнение работ, зарплата, платежи, ТМЦ, взаиморасчёты).
+- **Фоновый воркер** `api\sync_worker.py` (`python -m api.sync_worker`): периодический обмен с удалённым пиром по HTTP (интервал, размер пакета, одноразовый режим), gzip, курсоры в `constants` — переживает рестарты, повторная отправка безопасна (дедуп по uuid+времени).
+- **Relay bridge** `api\sync_relay_bridge.py`: обмен с центральным брокером `sync.php` (filesystem-shaped) для клиентов за NAT — только исходящие соединения; авторизация op-token или rig-id+token; отдельные партиции, интервал, размер пакета; запускается фоновым потоком внутри FastAPI (`main.py`, `RELAY_SYNC_ENABLED`).
+- **Безопасность пиров**: опциональный общий секрет `SYNC_TOKEN` (заголовок `X-Sync-Token`, сравнение constant-time, `api\auth_dependencies.py::require_sync_token`).
+
+---
+
+## 7. Импорт из 1С и миграции (`api\scripts\`)
+
+- **import_1c_dbf.py** — импорт справочников/спецификаций из DBF-выгрузки 1С: автоматический бэкап БД перед импортом, JSON-отчёты в `dbf_import_reports/`, снимки валидации (кол-во единиц/материалов/работ, привязка спецификаций); использует внешний модуль `dbf_importer` (в данном снапшоте отсутствует — скрипт рассчитан на отдельный пакет у корня проекта).
+- **restore_1c_specifications.py** — восстановление спецификаций из резервной копии старой базы (бэкап CTM), с канонизацией имён единиц (легаси-карта «m2»→«м²», «тн»→«т» и т.п.).
+- **import_ctm_sample_specifications.py** — перенос образцовых спецификаций из базы предыдущей системы CTM в группу «CTM Import / Specs Sample», с фолбэками единиц по типу компонента.
+- **detect_duplicate_units.py / merge_duplicate_units.py** (+ `api\unit_cleanup.py`) — поиск дублей единиц по нормализованному имени, подсчёт ссылок (материалы, спецификации), слияние.
+- **seed_cost_test_scenario.py** — детерминированный сквозной сценарий учёта затрат (сценарий 7A из TESTING_PLAN): справочники → план/факт → реальное распределение накладных и калькуляция сервисами, сверка с эталоном.
+- Runtime-импорт спецификаций через API (XLSX-превью, создание материалов, статусы проверки, файл корректировок) — см. п. 2; профили импорта Excel — `api\import_profiles.py`.
+
+---
+
+## 8. Авторизация, роли, безопасность
+
+`api\routers\auth.py`, `api\security.py`, `api\auth_dependencies.py`, `api\config.py`:
+- **JWT** (HS256, срок 8 ч, `jti`), пароли **pbkdf2_sha256** (`passlib`), обратная совместимость со старыми хэшами.
+- **Серверные сессии** (`sessions`): отзыв по logout, истечение по времени и **по неактивности (30 мин)** — каждая аутентификация обновляет `last_activity`; неактивный пользователь блокируется.
+- **Роли**: `admin`, `manager`, `foreman` (демо-аккаунты admin/manager/foreman). Проверка `require_roles(...)`: чтение — всем, запись/копирование/импорт ТМЦ и платежей — manager+admin, **проведение ТМЦ и платежей — только admin**, операции учёта затрат — admin/manager, engineering — только admin. Прораб видит в дашборде только свои дневные отчёты/табели.
+- **SYNC_TOKEN** для peer-синхронизации, CORS-настройка, ограничение размера настроек (64 КБ), журнал аудита `audit_logs` (кто/что/ресурс/детали; просмотр `/api/cost/audit-logs`).
+- Пользовательские настройки форм (`user_settings`): состав колонок, сортировка, плотность списков — `api\routers\system.py`.
+
+---
+
+## 9. Печать и экспорт
+
+- **PDF**: собственный генератор `api\printing.py` (без внешних зависимостей, транслитерация кириллицы для Helvetica).
+- **Excel**: SpreadsheetML (Excel 2003 XML) и XLSX через openpyxl. Печатные формы (`api\services.py`): **смета** (с ресурсной частью и итогами НР/прибыль), **акт по смете**, **дневной отчёт**, **акт выполненных работ по дневному отчёту**, **табель** (унифицированная форма на XLSX-шаблоне с копированием стилей). Выбор формата: `?format=pdf|excel`.
+- **Регистр работ**: экспорт CSV (UTF-8 BOM, «;») и XLS с итогами (`api\routers\registers.py`).
+- **Строки документов ТМЦ**: экспорт в Excel (`goods_services.export_goods_document_lines`).
+- **Спецификации работ**: экспорт в Excel, экспорт проблемных, файл корректировок (`work_services.py`).
+- **Унифицированный текстовый обмен** `api\text_import_export.py`: TSV / JSON / XLSX для табличных частей смет, дневных отчётов и всех документов затрат; **автосоздание отсутствующих справочных записей** (материалы, единицы, работы, контрагенты, машины, элементы затрат) с разрешением «сначала по коду, потом по наименованию»; документы всегда создаются непроведёнными.
+- **Табель**: экспорт JSON/Excel, импорт XLSX с предпросмотром.
+- **Клиентский экспорт отчётов** в CSV (BOM) — `web-client\src\utils\reportExport.ts`.
+
+---
+
+## Прочее (зрелость продукта)
+
+- **Дашборд и здоровье системы**: `/api/health` (версия сборки `BUILD_VERSION`/git describe, версия схемы), `/api/dashboard/summary` (`api\routers\system.py`).
+- **Настройки форм пользователя** (колонки/сортировка/фильтры списков) — `/api/system/user-settings/{form}`.
+- **Автонумерация документов** с префиксом, производным от имени файла БД (`database_number_prefix`), длина номера табеля настраивается.
+- **ДвухСУБДовая архитектура** (SQLite/PostgreSQL) с диалектным слоем (`api\db\`).
+- Веб-клиент: 40+ представлений (списки/формы документов, отчёты, регистры, синхронизация, инженерный раздел, админ-профили импорта), контекстные меню документов (копирование/на основании/движения), `web-client\src\views\`, `web-client\src\composables\`.
+
+**Ключевые файлы-источники:** `api\main.py`, `api\routers\{documents,works,goods,payments,settlements,registers,cost_accounting,references,sync,system,auth,engineering}.py`, `api\services.py`, `api\goods_services.py`, `api\payment_services.py`, `api\work_services.py`, `api\cost_accounting_services.py`, `api\sync_runtime.py`, `api\sync_worker.py`, `api\sync_relay_bridge.py`, `api\text_import_export.py`, `api\printing.py`, `api\import_profiles.py`, `api\database.py`, `api\engineering_metadata.py`, `api\engineering_query.py`, `api\scripts\*`, `web-client\src\utils\reportExport.ts`, `web-client\src\composables\useBasedOnPrefill.ts`.
+I now have everything I need. Let me compile the comprehensive functional catalog in Russian, organized by the 9 requested sections, with source file references.
+
+Summary of key points:
+
+**Архитектура**: FastAPI (api/main.py), 12 роутеров, SQLite/PostgreSQL DBAL (api/db/), Vue SPA раздача, gzip request/response middleware, relay bridge startup.
+
+**1. Документы:**
+
+documents.py router (/api/documents):
+- Сметы (estimates): list (пагинация/поиск/сортировка/quick filters/object_id), create, get, update, delete (soft, marked_for_deletion), restore, post/unpost (проведение — формирует регистр исполнения работ), print (PDF/Excel: смета, акт), copy, import-text (TSV/JSON/XLSX), export-text.
+- Дневные отчёты (daily-reports): то же + print-act (акт выполненных работ по дневному отчёту), copy. Проведение пишет движения в work_execution_register.
+- Табели (timesheets): list/create/get/update/delete, post/unpost (записи в payroll_register), print (унифицированная форма, Excel с шаблоном), export (json/excel), copy, autofill (генерация строк из дневных отчётов за месяц), import-preview (XLSX-импорт с предпросмотром).
+
+works.py router: единицы измерения (/api/units), материалы (/api/materials CRUD), работы (/api/works CRUD + detail), спецификации работ: get, copy-from (предпросмотр копирования), import (предпросмотр XLSX), import/materials (создание материалов из превью), export (xls), export-flagged (экспорт проблемных спецификаций по review_status), import-corrections (импорт исправлений), mark-import-issues (пометка работ с проблемами импорта).
+
+goods.py router (/api/goods): 
+- Поступления ТМЦ (receipts): list/create/get/update/delete/post/unpost/copy. Проведение: пишет движения в inventory_register + mutual_settlements_register; auto_schedule — автодобавление строки в непроведённый график платежей (с учётом отсрочки из договора).
+- Реализации/расход ТМЦ (issues): то же.
+- Инвентаризация: inventory/balances (остатки на дату по объекту/материалу), inventory/movements (движения за период).
+- {kind}/{document_id}/movements — движения регистров документа.
+- Экспорт строк (xls), импорт строк (XLSX предпросмотр + профили), import-profiles (сохранение профилей импорта в constants, шарится через синхронизацию).
+
+payments.py router (/api/payments):
+- Графики платежей (schedules): list/create/get/update/delete/post/unpost; строки: направление (incoming/outgoing), категория, плановая дата, контрагент, договор, смета, объект, сумма; группы строк (is_group, group_name, collapse).
+- Автоподбор (preview): incoming из регистра исполнения работ, payroll из регистра зарплаты, goods-receipts (платежи поставщикам), goods-issues (поступления от заказчиков).
+- Платёжные документы (transactions): list/create/get/update/delete/post/unpost; проверка "платёж в пределах начислений" (_assert_payment_within_accruals); связка со строкой графика (linked_schedule_id/linked_line_id); проведение пишет в mutual_settlements_register (apply_payment_to_settlements — FIFO/по срокам? проверить — но кратко).
+- Регистр платежей (/register) с group_by и итогами; cashflow по дням (/cashflow); movements транзакции.
+
+settlements.py router (/api/settlements): balance (сальдо взаиморасчётов), ledger (карточка счёта по организации/контрагенту/договору), overdue (просроченная задолженность на дату), turnover (обороты за период).
+
+cost_accounting.py router (/api/cost):
+- Справочники учёта затрат: cost-elements, allocation-bases, machines (CRUD).
+- Расход материалов (material-consumptions): CRUD + post/unpost/restore. Строки: работа, материал, плановое/фактическое количество, цена, сумма, элемент затрат.
+- Использование машин (machinery-usage-reports): CRUD + post/unpost/restore. Строки: машина, работа, часы, стоимость машины, зарплата оператора.
+- Субподряд (subcontract-acceptances): CRUD + post/unpost/restore. Строки: работа, субподрядчик, сумма.
+- Накладные расходы (overhead-expenses): CRUD + restore; распределение накладных (overhead/distribute, cancel-distribution) по базе распределения.
+- Калькуляции (cost-calculations): CRUD, calculate (расчёт себестоимости: completed_works_cost), post/unpost.
+- Отчёты: cost-card, cost-turnover, cost-deviations, cost-profitability.
+- Drilldown: actual-costs, planned-costs, overhead.
+- Audit logs.
+- import-text/export-text для всех табличных документов.
+
+**2. Справочники** (references.py + services.list_references): counterparties (контрагенты: ИНН, контакты, иерархия), objects (объекты строительства: адрес, владелец, иерархия), works (виды работ: код, ед., цена, трудоёмкость, статус проверки спецификации), persons (физлица: таб.номер, должность, ставка, привязка к пользователю), organizations (организации: ИНН, ответственный), contracts (договоры: номер, сумма, вид, валюта, НДС, отсрочка платежа, даты), materials (материалы). Плюс units (через /api/works → /api/units). Все: list с пагинацией/поиском/сортировкой/review_status, get, create, update, soft-delete (marked_for_deletion). Иерархия (parent_id, is_group).
+
+**3. Регистры** (registers.py + database.py): work_execution_register (исполнение работ: регистратор, период, объект/смета/работа, приход/расход кол-во и суммы), payroll_register (зарплата), inventory_register (ТМЦ), mutual_settlements_register (взаиморасчёты: начисления/оплаты/план), payment_schedule_register (исполнение графика платежей: план/факт). Регистр работ: запрос с фильтрами (период, объект, смета, работа, заказчик, договор), группировкой, итогами, quick filters; экспорт CSV/XLS с русской строкой итогов. Movements-viewer по документу.
+
+**4. Отчёты:** cost card (карточка затрат по объекту за периоды), cost turnover (оборотная ведомость), deviations (отклонения плана от факта с порогом %), profitability (рентабельность по объекту/договору/объект+договор), drilldown (фактические затраты до регистратора, плановые, накладные), inventory balances, overdue, settlements turnover, платежный регистр и cashflow, dashboard summary.
+
+**5. engineering/tables:** каталог таблиц с синонимами и категориями (справочники/документы/табличные части/регистры/справочники учёта затрат), просмотрщик таблиц (пагинация, поиск по текстовым полям, сортировка, quick-фильтры, LEFT JOIN представления ссылок), консоль запросов (трансляция синонимов → SQL, только SELECT, вайтлист таблиц, read-only, LIMIT 10k, таймаут 10с), только admin.
+
+**6. sync:** узлы (sync_nodes), журнал изменений sync_changes, версия схемы SYNC_SCHEMA_VERSION, регистрация узла, exchange (приём изменений с приоритетами сущностей, применение по updated_at last-write-wins, конфликты → object_version_history), status, prune, conflicts list/resolve. Рабочий цикл sync_worker (фоновый процесс, HTTP, gzip, курсоры в constants). Relay bridge (sync.php broker, filesystem-shaped, op/rig auth, NAT-friendly). SYNC_TOKEN gate. 
+
+**7. Импорт из 1С:** scripts/import_1c_dbf.py (DBF импорт: бэкап БД, отчёты в dbf_import_reports, валидационные снапшоты; требует внешний модуль dbf_importer — в снапшоте отсутствует), import_ctm_sample_specifications.py (перенос образцов спецификаций из старой базы CTM), restore_1c_specifications.py (восстановление спецификаций из бэкапа), detect/merge duplicate units (дедупликация единиц с нормализацией имён), seed_cost_test_scenario.py (тестовый сценарий). Спецификации: work_services (нормализация компонент, привязка материалов по коду/имени, флаги проблем, статусы ok/incorrect/corrected).
+
+**8. Авторизация/роли/безопасность:** JWT (HS256, 8ч, jti), сессии в БД (sessions: revoked, expires_at, last_activity), таймаут неактивности 30 мин, logout = revoke jti, роли: admin/manager/foreman (демо-аккаунты admin/manager/foreman), require_roles на мутациях (goods: manager/admin на запись, admin на проведение; payments: аналогично; cost: admin/manager), engineering — только admin; SYNC_TOKEN для peer-sync эндпоинтов; пароли pbkdf2_sha256 (+легаси-плейнтекст fallback); CORS; gzip; аудит-логи (audit_logs в cost-accounting).
+
+**9. Печать и экспорт:** printing.py (собственный PDF-генератор с транслитерацией кириллицы), Excel через SpreadsheetML XML и openpyxl (XLSX), смета + акт + дневной отчёт + акт по дневному отчёту + табель (унифицированная форма, шаблон XLSX), регистр работ CSV/XLS, text_import_export (TSV/JSON/XLSX унифицированный импорт-экспорт табличных частей с автосозданием справочников), reportExport.ts (клиентский CSV с BOM), профили импорта Excel.
+
+Прочее: user_settings (персональные настройки форм: колонки, сортировка, плотность; use_specification_review), constants (общие константы: префикс нумерации из имени БД — database_number_prefix), health + build version, SPA fallback + static, db SQLite/PostgreSQL.
+
+"Ввод на основании" (based on) — клиентская функция useBasedOnPrefill.ts: перенос шапки документа-основания в новый документ (based_on_type/id/number), для смет/дневных/табелей/cost-доков/ТМЦ/графиков.
+
+Movements (движения) — get_document_movements для goods, payment transactions; в web-client DocumentMovementsModal.
+
+Now compose the final structured answer in Russian. Should be comprehensive with file paths. Use absolute paths where citing files. I'll organize by the 9 sections requested. Make it detailed but scannable.
+
+I now have a comprehensive picture. Let me write the final structured summary in Russian, covering all 10 requested sections with file sources. I should be thorough but organized.
+Изучил frontend CTM (Vue 3 + Pinia + vue-router) в `f:\2026f\ctm3\CTM2_recovered\current\web-client\src` — все views, компоненты, composables и config. Ниже структурированный список пользовательских возможностей интерфейса с указанием файлов-источников.
+
+---
+
+# Возможности интерфейса CTM (web-client)
+
+## 1. Разделы и журналы документов
+
+**Единый механизм списков (журналов)**: каждый журнал описывается декларативным конфигом `DocListConfig` — `src/config/documentListTypes.ts` (колонки, API, маршруты, права, «Ввод на основании», склонённые подписи), поведения — composable `src/composables/useDocumentList.ts`. Конфиги всех 11 видов — `src/config/documentLists.ts`:
+
+| Журнал | formName | Особенности |
+|---|---|---|
+| Сметы | `estimates` | фильтры по заказчику/объекту/сумме; «Ввод на основании»: дневной отчёт, табель, расход материалов, рапорт машин, платёжный календарь; есть копирование |
+| Ежедневные отчёты | `daily-reports` | колонки: смета, прораб, статус |
+| Табели | `timesheets` | период (месяц), объект, смета, бригадир, часы, сумма; **право проведения: admin всегда, foreman — только свои табели** (`canManagePosting`) |
+| Расход материалов | `material-consumptions` | объект, смета, склад |
+| Рапорты о работе машин | `machinery-usage` | объект, смета |
+| Акты приёмки субподряда | `subcontract-acceptances` | объект, смета |
+| Накладные расходы | `overhead-expenses` | `hasPost: false` — вместо проведения статус «распределено/не распределено»; сортировка по периоду |
+| Расчёты себестоимости | `cost-calculations` | `statusField: 'status'`, `postableWhen: status==='calculated'`, `canDeleteWhen: status!=='posted'` |
+| Поступления ТМЦ | `goods-receipts` | колонки: организация, поставщик, договор, объект, суммы без/с НДС; «Ввод на основании» → списание ТМЦ |
+| Списания ТМЦ | `goods-issues` | аналогично, контрагент = покупатель |
+| Платёжные календари | `payment-schedules` | период с/по, объект, договор, итоги поступлений/платежей |
+| Платежи (факт) | `payment-transactions` | `canOpen: false` (нет отдельной формы — создание инлайн в списке), фильтр направления (поступление/платёж) |
+
+Маршруты всех разделов — `src/router/index.ts`; навигационное меню (4 секции: Документы / Отчёты / Справочники / Инженерия) — `src/components/layout/AppSidebarNew.vue`.
+
+**Общие возможности любого журнала** (`useDocumentList.ts` + `components/documents/ListCommandBar.vue`):
+- Создать, Открыть, Копировать (если поддерживается), Провести / Отменить проведение (bulk по выделению), Удалить (пометить на удаление), «Ввести на основании ▾»;
+- счётчик «Выбрано: N», поиск с debounce 300 мс, сортировка кликом по колонке (цикл asc → desc → сброс, сортировка сохраняется в user_settings);
+- быстрый отбор по колонкам (строка фильтров: текст/дата/месяц/селект — типы из `DataTable.vue`), сброс фильтров;
+- «Настройка списка» — `components/documents/ListSettingsDialog.vue` (видимость колонок, порядок ↑/↓, «По умолчанию»); персистентность на сервере — `composables/useListSettings.ts` (user_settings: ключи `columns`, `sort`; новые колонки конфига добавляются в конец видимыми);
+- пагинация; подтверждения с правильными склонениями («Пометить 3 сметы на удаление?»);
+- проведение реализует «1С-поведение»: перед проведением форма сохраняется (см. формы документов).
+
+**Контекстное меню строки** (ПКМ) — `composables/useDocumentListContextMenu.ts`: Открыть / Копировать / Провести (Отменить проведение) / Пометить на удаление / Снять пометку / подменю «Ввести на основании»; ПКМ выделяет строку (поведение тонкого клиента). Более ранний вариант для отдельных view — `composables/useDocumentContextMenu.ts`.
+
+---
+
+## 2. Формы документов (что можно делать)
+
+### Смета — `views/documents/EstimateFormView.vue`
+- Шапка: номер (авто), дата, заказчик, объект, подрядчик, ответственный, договор — все через `EntityPicker` с возможностью создать/открыть карточку справочника.
+- Двухпанельный воркспейс: слева **панель каталога работ** `components/documents/EstimateWorkCatalog.vue` (дерево групп/работ с breadcrumbs, «Вверх», поиск по коду/наименованию/категории, drag&drop работы в таблицу, клик — вставка после выделенной строки, открытие карточки `WorkForm`); сплитер с изменяемой шириной (сохраняется в localStorage), ширины колонок таблицы тоже перетаскиваются и сохраняются.
+- Строки: группы/работы (`WorkPicker`), кол-во, ед., цена, трудоёмкость, авто-подстановка единицы/цены/нормы из каталога, пересчёт сумм и итогов (итоговая сумма, плановая трудоёмкость), добавление группы/пустой работы, удаление строк, статус-пилюля «Проведен/Черновик».
+- Кнопки в шапке (`useHeaderBar`): К списку, Сохранить, Провести/Отменить проведение (только admin).
+- «⇄ Обмен данными» — `components/documents/EstimateDataExchangeDialog.vue` (импорт/экспорт ТЧ).
+
+### Ежедневный отчёт — `views/documents/DailyReportFormView.vue`
+- Шапка: смета, прораб, доп.соглашение.
+- «**Заполнить из сметы**» — перенос всех строк сметы (план/факт/цены); добавление строк, группы, переключатель «Суммовые колонки» (ед./цена/сумма); авто-расчёт % отклонения факт/план и фактической суммы.
+- **Исполнители по строкам** — мультивыбор физлиц (`ExecutorPicker`).
+- Печать: «Акт (Excel)» и «Акт (PDF)» (`printDailyReportAct`), обмен данными (`DocumentDataExchangeDialog`).
+- Предзаполнение по документу-основанию (`useBasedOnPrefill.ts`).
+
+### Табель — `views/documents/TimesheetFormView.vue`
+- Шапка: объект, смета, бригадир (заблокирован для роли foreman), период (month); итоги часы/сумма.
+- Табличная часть `components/documents/TimesheetLinesEditor.vue`: сотрудник + ставка + сетка часов по дням месяца (выходные подсвечены), навигация стрелками по сетке, итоги по дням/сотрудникам, «Добавить сотрудника».
+- **Импорт из .xlsx/.json с диалогом сверки** (`previewTimesheetImport`): ключи автосопоставления (табельный номер, ФИО), статусы Совпало/Создать/Проверить, ручной выбор физлица, «Создать физлицо», сводка; **«Заполнить по отчетам»** (autofill из ежедневных отчётов).
+- Копирование, экспорт, печать через диалог выбора формата `components/common/PrintFormatDialog.vue` (Excel/PDF).
+- Проведение: admin или «свой» foreman-бригадир.
+
+### Расход материалов — `views/documents/MaterialConsumptionFormView.vue`
+- Шапка: объект, смета, прораб, склад. Строки: работа (`WorkPicker`), материал (`EntityPicker` с авто-ценой/ед. из справочника), лимит (план, только чтение), списано, цена, сумма (авто). Обмен данными, проведение/отмена.
+
+### Рапорт о работе машин (механизмы) — `views/documents/MachineryUsageFormView.vue`
+- Шапка: объект, смета, прораб. Строки: машина (авто-стоимость маш.-часа и ЗП машиниста из карточки), работа, ед., часы, стоимость машин, ЗП машиниста. Обмен данными, проведение.
+
+### Акты приёмки субподрядных работ — `views/documents/SubcontractAcceptanceFormView.vue`
+- Шапка: объект, смета. Строки: работа, субподрядчик (контрагент), ед., сумма, описание. Обмен данными, проведение.
+
+### Накладные расходы — `views/documents/OverheadExpenseFormView.vue`
+- Шапка: номер, дата, период. Строки: статья затрат (`EntityPicker` по справочнику cost-elements), контрагент, сумма, описание. Статус «Распределены/Не распределены» — блокирует редактирование; dirty-flag с предупреждением при уходе.
+
+### Расчёт себестоимости — `views/documents/CostCalculationFormView.vue`
+- Шапка: номер, дата, период, объект (0 = все). Жизненный цикл: Черновик → (Рассчитать ▶) → Рассчитан → (Провести ✓) → Проведен (заблокирован) → отмена проведения ↺. Показывает «Рассчитано записей: N». Доступ к расчёту/проведению — роли admin/manager (`auth.canManageCost`). Dirty-flag.
+
+### ТМЦ: поступления/списания — `views/goods/GoodsDocumentFormView.vue`
+- Шапка: организация, контрагент (поставщик/покупатель), договор, объект, описание.
+- ТЧ `components/documents/GoodsLinesEditor.vue`: материал (EntityPicker с деталями ед./цена), наименование, ед., кол-во, цена без НДС, НДС %, суммы без/с НДС, чертёж, примечание; итоги.
+- **«Движения по регистрам»** — `components/documents/DocumentMovementsModal.vue` (склад inventory_register + взаиморасчёты mutual_settlements_register, итоги, экспорт CSV).
+- **«Загрузить из Excel…»** (с профилями импорта) и «Выгрузить в Excel»; «Создать материалы» — генерация карточек материалов по наименованиям строк без материала. Проведение/отмена. Списки — `views/goods/GoodsDocumentListView.vue` (конфиг `goodsDocumentListConfig(kind)`).
+
+### Платёжный календарь (документ) — `views/payments/PaymentScheduleFormView.vue`
+- Шапка: период с/по, объект, договор, ответственный.
+- Строки-планы: направление (поступление/платёж), категория (этап заказчика, зарплата, поставщик, счёт поставщика/заказчика по ТМЦ, налоги, прочее), дата план, контрагент, сумма, описание, факт (ro).
+- **Подбор**: «Подобрать поступления», «Подобрать зарплату», «Из поступлений ТМЦ», «Из реализаций ТМЦ» (preview-эндпоинты).
+- Итоговые карточки: поступления план / платежи план / чистый поток. Проведение (admin).
+
+### Платежи (факт) — `views/payments/PaymentTransactionListView.vue`
+- Инлайн-форма «+ Платёж» (дата, направление, категория, контрагент, сумма, описание) поверх списка; журнал со всеми списковыми возможностями (без открытия формы).
+
+---
+
+## 3. Справочники и каталог работ
+
+- **Универсальный справочник** `views/references/ReferenceView.vue` (типы: контрагенты, объекты, работы, физлица, организации, договоры, материалы — конфигурации полей в `composables/referenceFields.ts`): поиск, добавление/редактирование в модалке, копирование, групповое удаление (`SelectionActionBar`), пагинация, двойной клик — редактирование.
+- **Каталог работ** `views/references/WorkCatalogView.vue`: таблица тип (Группа/Работа)/наименование (+код)/ед./цена/норма труда; поиск по названию/коду; карточка работы/группы — `components/work/WorkForm.vue` (наименование, код, ед. с автодополнением, родительская группа, признак группы, норма труда, цена, сворачиваемая секция реквизитов, dirty-статус, отмена правок).
+- **Проверка спецификаций** (флаг `user.use_specification_review` — `composables/useSpecificationReview.ts`): колонка «Проверка» (ОК/Некорректно/Исправлено), фильтр по статусу, меню «Еще»: «Экспорт некорректных» (xls) и «Импорт исправлений» (xls с отчётом «обновлено работ/строк»); в карточке работы — статус и комментарий проверки + секция спецификации.
+- Массовое удаление работ с подтверждением; сброс кэша каталога (`api/workCatalog.ts`).
+- **Профили импорта Excel** `views/admin/ImportProfilesView.vue`: профили для поступлений/списаний ТМЦ и спецификаций работ — лист, строка заголовков, начало данных, маппинг поле→колонка, разрешение материала (код/имя/код-или-имя), создание материалов/единиц, колонка-множитель цены, стоп по пустой строке.
+
+---
+
+## 4. Регистр исполнения работ
+
+`views/registers/WorkExecutionView.vue` + `views/registers/WorkExecutionDetailDialog.vue`, логика — `composables/useWorksRegister.ts`:
+- Форма-фильтр: период с/по, объект, смета, работа, заказчик, договор, **группировка** (без/по объекту/смете/работе/заказчику/договору/объект+смета/заказчик+договор).
+- Командная панель `components/registers/RegisterCommandBar.vue`: обновить, **экспорт Excel/CSV**, быстрый отбор, настройка списка.
+- Таблица движений: период, регистратор (ссылка на смету/дневной отчёт), заказчик, договор, объект, смета, работа, приход/расход кол-во и суммы, баланс; кликабельные итоги (Итого приход/расход/баланс); сортировка, быстрый отбор, настройка колонок (сохраняются), пагинация.
+- Двойной клик / ПКМ → «Открыть детализацию» — диалог движений по измерениям строки (объект/смета/работа в чипах, ссылки-регистраторы, двойной клик — переход к документу).
+- Контекстное меню: детализация, перейти к смете / к дневному отчёту, настройка списка.
+
+---
+
+## 5. Отчёты и экспорт (`views/reports/`)
+
+- **Карточка себестоимости** `CostCardView.vue`: выбор объекта (EntityPicker) + период; сводка (план/факт себестоимость, отклонение, выручка, прибыль, рентабельность %), таблица по элементам затрат и детализация по работам; **drilldown** по клику на суммы — `components/reports/CostDrilldownDialog.vue` (регистры actual/planned/overhead, строки с регистраторами-ссылками на документы-регистраторы, итоги, пагинация).
+- **Оборотно-сальдовая ведомость по затратам** `CostTurnoverView.vue`: период (месяцы) + объект; сальдо нач./приход/расход/сальдо кон. по элементам, drilldown.
+- **Отчёт по отклонениям** `CostDeviationsView.vue`: период, порог %, объект; план/факт/отклонение по работам×элементам, drilldown.
+- **Рентабельность по объектам** `CostProfitabilityView.vue`: период, группировка (объекты/договоры/объект+договор), итоги, drilldown.
+- **Остатки ТМЦ** `InventoryBalancesReport.vue`: на дату, объект, материал; приход/расход/остаток/средняя цена, отрицательные остатки подсвечены; **«Выгрузить в CSV»**.
+- **Оборотно-сальдовая ведомость (взаиморасчёты)** `SettlementsTurnoverReport.vue`: период, организация, контрагент, договор; Дт/Кт сальдо и обороты (начисление/оплата), экспорт CSV.
+- **Просроченная задолженность** `OverdueReport.vue`: на дату, организация; дебиторка/кредиторка, дни просрочки, суммы, экспорт CSV.
+- CSV-экспорт — утилита `utils/reportExport.ts` (`downloadCsv`, UTF-8 BOM, `;`).
+- Экспорт ТЧ документов (TSV/JSON/XLSX) — `components/documents/DocumentDataExchangeDialog.vue` / `EstimateDataExchangeDialog.vue`; печать Excel/PDF — `PrintFormatDialog.vue` и прямые кнопки (табель, акт дневного отчёта).
+
+---
+
+## 6. Платёжный календарь (аналитика)
+
+`views/payments/PaymentCalendarView.vue`:
+- Фильтры: период с/по, объект, контрагент, направление, категория, группировка (контрагент/объект/договор/категория/направление).
+- Таблица регистра платежей: дата план, направление, категория, контрагент, объект, договор, план/факт/остаток, статус («Просрочен» красным / «Оплачен»).
+- Итоговые карточки: поступления план, платежи план, чистый поток, поступления факт, платежи факт.
+- **«Кассовый поток по дням»** — горизонтальная лента дней с приходом/расходом и накопленным балансом, подсветка дефицитных/профицитных дней.
+
+---
+
+## 7. Дашборд
+
+`views/DashboardView.vue`:
+- Карточки-счётчики: сметы, ежедневные отчёты, табели (кликабельные ссылки в журналы), приход/расход по регистру.
+- Блок «Справочники» — количество контрагентов/объектов/работ/физлиц/организаций со ссылками.
+- Быстрые действия в шапке: «Новая смета», «Новый отчет», «Новый табель» (`useHeaderBar`).
+- Данные — `fetchDashboardSummary` (`api/system.ts`).
+
+---
+
+## 8. Инженерный раздел (только admin)
+
+`views/engineering/TablesView.vue` (роут `engineering/tables`, `meta.requiresAdmin`; секция «Инженерия» в сайдбаре видна только admin — `AppSidebarNew.vue`):
+- Две вкладки: «Просмотр таблиц» (`components/engineering/TablesBrowser.vue`) и «Консоль запросов» (`components/engineering/TablesConsole.vue`); каталог таблиц — `getEngineeringCatalog`.
+- **Дерево таблиц** `components/engineering/EngineeringTableTree.vue`: категории → таблицы (синоним/физическое имя) → поля; поиск по таблицам и полям; клик по полю вставляет токен (в консоли — «Таблица.Поле»).
+- **Просмотрщик**: выбор таблицы, поиск, отбор по колонкам (тип фильтра по типу поля), настройка списка (видимость колонок, сохранение в user_settings), сортировка, пагинация, экспорт CSV.
+- **Консоль запросов** (язык запросов с русскими синонимами, напр. `SELECT Наименование, ИНН FROM Контрагенты`): выполнить (Ctrl+Enter), очистить, **сохранённые запросы** (сохранить/загрузить/удалить, хранение в user_settings), мета (строк, мс, признак обрезки), автосуммы/средние по числовым колонкам, **Печать** и **Экспорт CSV** результата; Tab — отступ в редакторе.
+
+---
+
+## 9. UX-возможности
+
+- **Табы воркспейса (MDI)** — `components/layout/WorkspaceTabs.vue` + `stores/workspace.ts`: несколько одновременно открытых документов/списков (мультиинстанс через `WorkspaceContent`, v-show), маркер «●» несохранённых изменений, закрытие крестиком/средней кнопкой, меню «⋯»: дублировать активную / закрыть остальные / закрыть все; защита от потери данных (подтверждение при закрытии «грязных» табов и при закрытии вкладки браузера — guard `beforeunload` в `router/index.ts`); персистентность табов в localStorage; URL отражает активный таб.
+- **Заголовок-панель документа** — `composables/useHeaderBar.ts` + `stores/headerBar.ts` + `components/layout/AppHeader.vue`: заголовок активного таба и его действия (Сохранить/Провести/Печать/Копировать/К списку...), карточка пользователя (роль, ФИО), выход.
+- **Контекстные меню** — `components/common/ContextMenu.vue` (пункты, разделители, подменю, danger-пункты, disabled) — в журналах, регистре работ, платежах.
+- **Bulk-операции** — мультивыделение строк в DataTable + `components/common/SelectionActionBar.vue` (справочники: изменить/копировать/удалить; работы: удалить) и команды панели журнала (провести/отменить/удалить по выделению).
+- **Настройки списков** — `ListSettingsDialog.vue` + `useListSettings.ts` (серверное хранение per-form: состав/порядок колонок, сортировка).
+- **Плотность UI** — `composables/useUiDensity.ts` / `useDocumentDensity.ts`: компактный режим (класс `compact-ui`, localStorage) для таблиц и форм.
+- **EntityPicker** — `components/common/EntityPicker.vue`: поле с кнопками «открыть карточку ○ / выбрать ▼ (F4) / очистить ✕», модальная форма выбора с поиском, пагинацией, «+ Создать» и редактированием справочника на месте (`ReferenceEditModal`); варианты compact/full; `ExecutorPicker` — мультивыбор исполнителей; `WorkPicker` — выбор работы.
+- **Печать** — `PrintFormatDialog.vue` (Excel/PDF) для табеля; прямые кнопки «Акт (Excel)/(PDF)» в дневном отчёте; печать результата консоли.
+- **Обмен данными ТЧ** — `DocumentDataExchangeDialog.vue`: импорт из вставленного текста (TSV/JSON) или файла XLSX, флаг «Заменить существующие строки», авто-создание недостающих справочников, отчёт с предупреждениями; экспорт ТЧ.
+- Сплитеры и перетаскиваемые колонки в смете (с сохранением в localStorage), drag&drop работ из каталога, хоткеи (F4 — выбор, Ctrl+Enter — консоль, стрелки — навигация в табеле).
+- **Роли**: admin (полный доступ + инженерия), manager (`canManageCost` — расчёт/проведение себестоимости), foreman (свои табели) — `stores/auth.ts`; guest-роут login, guard'ы в `router/index.ts`.
+
+---
+
+## 10. Синхронизация
+
+`views/SyncView.vue` (+ `api/sync.ts`):
+- Статус: локальный узел (код/название), версия схемы, изменений в очереди.
+- Таблица **удалённых узлов**: код, название, курсоры (получено/отправлено до), время последнего приёма/отправки; кнопка **«Обмен»** по узлу (отправка исходящих пачек по курсору, batch 100).
+- **Регистрация удалённого узла** (код, например OFFICE-01 + название).
+- **Конфликты**: список с типом сущности, документом, UUID, локальной/удалённой метками, исходом (бейдж), временем поступления; кнопка **«Применить удалённую»** для разрешения.
+- **Результат последнего обмена**: принято / пропущено / ошибок / отправлено, раскрывающиеся списки конфликтов и ошибок применения.
+
+---
+
+Ключевые файлы-источники: `src/config/documentLists.ts`, `src/config/documentListTypes.ts`, `src/composables/useDocumentList.ts`, `src/composables/useDocumentListContextMenu.ts`, `src/composables/useListSettings.ts`, `src/composables/useWorksRegister.ts`, `src/composables/useBasedOnPrefill.ts`, `src/stores/workspace.ts`, `src/stores/auth.ts`, `src/components/layout/AppSidebarNew.vue`, `src/components/layout/WorkspaceTabs.vue`, `src/components/layout/AppHeader.vue`, `src/components/common/{EntityPicker,ContextMenu,SelectionActionBar,PrintFormatDialog,DataTable}.vue`, `src/components/documents/{ListCommandBar,ListSettingsDialog,DocumentDataExchangeDialog,DocumentMovementsModal,GoodsLinesEditor,TimesheetLinesEditor,EstimateWorkCatalog}.vue`, `src/components/work/WorkForm.vue`, `src/components/engineering/{EngineeringTableTree,TablesBrowser,TablesConsole}.vue`, `src/components/reports/CostDrilldownDialog.vue`, `src/views/**`, `src/utils/reportExport.ts`, `src/router/index.ts`.
+
+I now have a comprehensive picture of the CTM product. The user wants:
+
+1. A list of all CTM (as mature product) capabilities for a customer (construction contractor without 1C ERP, or needing operational accounting) — what it can do.
+2. Second block — how it can be enhanced/integrated — "if refined, it could also do this, this and this."
+
+The user is gathering info to talk to end consumers to identify pains and needs, to build a USP for selling the product.
+
+So I should write this in Russian, structured, in a sales/customer-discovery-friendly way. Not too code-heavy, but grounded in what the product actually has. Should be practical, oriented towards conversation with a construction contractor.
+
+Let me structure:
+
+**Блок 1: Что CTM умеет сейчас (зрелый вид)**
+
+Group by business process for a construction contractor:
+
+1. Сметы и планирование
+2. Оперативный учёт производства (дневные отчёты, табели, материалы, механизмы, субподряд)
+3. Себестоимость и контроль затрат (накладные, калькуляция, отчёты)
+4. ТМЦ/склад
+5. Деньги (платёжный календарь, платежи, взаиморасчёты, задолженность, cashflow)
+6. Отчётность и аналитика (регистры, drilldown, дашборд)
+7. Справочники и НСИ (включая импорт из 1С, спецификации работ)
+8. Работа в поле/офлайн (P2P синхронизация, relay)
+9. Печать/обмен (PDF, Excel, TSV/JSON, ЭДО-like)
+10. Роли и безопасность
+11. Инженерный инструмент (таблицы, консоль запросов)
+
+**Блок 2: Что можно докрутить/интегрировать**
+
+Ideas grounded in the architecture:
+- Интеграция с 1С:Бухгалтерией (обмен, выгрузка проводок, counterparties, ЭДО)
+- Диадок/СБИС/Контур ЭДО — юридически значимые документы, счета-фактуры
+- Банки/банкинг (директ-банк, 1С-Битрикс24?), фокусировка: банк-клиент API (СберБизнес, Тинькофф) — автоподгрузка платежей, сверка
+- Мобильное приложение прораба (дневные отчёты с телефона, фотофиксация, геолокация, чек-листы)
+- Телеграм-бот уведомления (просрочки платежей, кассовые разрывы, отклонения факт/план)
+- BI-аналитика, Power BI/Metabase через read-only API/консоль запросов
+- Электронные подписи, скандинавский подход
+- Интеграция с маркетплейсами поставщиков (создание заявок на закупку из спецификаций)
+- CRM-функции (лиды, тендеры, КП)
+- Нормативные базы (ГЭСН/ФЕР, ТЕР) — расценки
+- Mobi: GPS-мониторинг техники, датчики топлива — рапорты машин автозаполнением
+- СКУД/биометрия — табели автозаполнением
+- Кадровый учёт/зарплата (расчёт ЗП по табелям, РКО, взносы)
+- Налоги и регламентированная отчётность (упрощ. декларации)
+- Мультикомпания/холдинг
+- REST API открытый — интеграция с чем угодно (уже есть инженерная консоль, read-only)
+- AI: прогноз кассовых разрывов, распознавание документов (OCR счетов), анализ отклонений
+- Электронный документооборот с заказчиком — акты КС-2/КС-3, М-29, формируемые из данных
+- Автоматические акты КС-2/КС-3, справки КС-3, М-29 (это популярная боль!)
+- Резервирование/бэкапы, облако
+- Импорт смет из ГрандСметы/Смета.ру (ARPS, GSF форматы) — очень актуально
+- Электронные путевые листы
+- Формы: унифицированные (КС-2, КС-3, М-29, Т-13)
+
+I should mark which of these are natural extensions given current architecture (e.g., printing.py already generates PDF/Excel; text_import_export; sync already has relay; engineering console already gives read-only SQL for BI integrations).
+
+Also the user wants to chat with end consumers to identify pains — maybe I can add a short block with questions to ask? They said "Пока я просто собираю инфу и хочу пообщаться с конечным потребителем, чтоб выявить боли и потребности от него лично чтоб на этом сделать утп для продажи продукта". So a bonus: suggested pain-discovery questions. That could be very valuable. I'll add a compact third block with interview questions mapped to capabilities. That's within scope since it helps them.
+
+Keep response in Russian. Format as lists. Reasonably concise but comprehensive — this is a "collecting info" request, so detail is fine. Avoid file references overload since this is for sales conversations; but code references are required when mentioning files... The instruction says when referencing code, use clickable links. I can include a few key links but this is a product capability overview, not code explanation. I'll keep code links minimal — maybe mention the architecture briefly with a couple of links. Actually the "Code Reference" rule: ALWAYS use clickable file links when mentioning any file. I'll just avoid mentioning specific files mostly, or include a few links where relevant (e.g., docs specs). I think it's fine to include a small "источники" note. Let me keep it clean — mostly no file mentions, maybe a couple.
+
+Structure the answer:
+
+# Блок 1 — Что умеет CTM сегодня (для заказчика)
+1. Планирование и сметы
+2. Оперативный учёт на объекте
+3. ТМЦ и склад
+4. Деньги
+5. Себестоимость и контроль
+6. Отчёты и аналитика
+7. НСИ и старт проекта (импорт из 1С)
+8. Работа офлайн/в поле
+9. Документооборот и печать
+10. Роли, безопасность
+11. Инженерные инструменты
+
+# Блок 2 — Что можно докрутить (доработки и интеграции)
+- Форматы и ЭДО
+- Банки
+- 1С бухгалтерия
+- Мобильное приложение
+- Уведомления/боты
+- BI
+- Учет зарплаты
+- Механизация/GPS
+- AI
+- API открытый
+
+# Блок 3 — Вопросы для интервью (боли)
+Short list of questions to ask the contractor mapped to features.
+
+Let me write it. Keep it punchy. Use tables where helpful. The user will use this for customer discovery, so wording should be customer-facing (no internal jargon). I'll write capabilities from the customer's perspective ("вы можете...").
+
+Length: this is inherently a big list; but I should stay concise. Use compact bullets.
+Собрал полную картину по кодовой базе CTM. Ниже — два блока для разговора с заказчиком (формулировки «от лица продукта», без внутреннего жаргона) + бонусный блок вопросов для интервью.
+
+---
+
+# Блок 1. Что умеет CTM уже сейчас (зрелый вид)
+
+## 1. Сметы и планирование
+- Ведение смет с иерархией строк (группы/разделы), работы из каталога с ценой, ед. изм. и нормой трудоёмкости
+- Итоги по сумме и трудоёмкости, автонумерация, копирование смет
+- Панель каталога работ: дерево, поиск, drag&drop работ в смету
+- Импорт смет из Excel/текста (TSV/JSON/XLSX) с автосозданием недостающих работ и единиц — можно перенести старые сметы без ручного набора
+- Печать сметы и **акта по смете** (PDF/Excel, с НР и прибылью)
+
+## 2. Оперативный учёт на объекте (то, чего нет в голой бухгалтерии)
+- **Ежедневные отчёты прораба**: факт по работам, исполнители по строкам, погода; заполнение из сметы одним кликом; печать дневного отчёта и акта выполненных работ
+- **Табели**: сетка часов по дням 01–31, итоги по людям и дням, унифицированная печатная форма, **автозаполнение табеля из дневных отчётов за месяц**, импорт табеля из Excel/JSON с диалогом сверки сотрудников
+- **Расход материалов**: план (лимит из спецификации) vs факт по работам
+- **Рапорты работы машин**: часы, стоимость машино-часа, ЗП оператора (подставляются из карточки машины)
+- **Акты субподряда**: какие работы, кому, за сколько
+- **Накладные расходы** за период + **распределение накладных по объектам** по выбранной базе
+- **Расчёт себестоимости** одной кнопкой: плановая/фактическая себестоимость по работам, отклонения, договорная стоимость, прибыль
+- Спецификации работ (нормы расхода материалов/труда/машин на ед.) — копирование между работами, импорт из Excel с предпросмотром, экспорт «проблемных» и импорт исправлений
+
+## 3. Склад и ТМЦ
+- Поступления и списания ТМЦ с НДС (авторасчёт сумм, итоги)
+- Загрузка накладных поставщика **из Excel по профилям сопоставления колонок** (один раз настроил — дальше грузишь файлы), генерация карточек материалов из строк
+- Остатки ТМЦ на дату по объектам/материалам, отрицательные остатки подсвечиваются
+- Просмотр всех движений документа по регистрам
+
+## 4. Деньги
+- **Платёжный календарь**: план поступлений/платежей с автоподбором строк (этапы заказчиков, зарплата по табелям, оплаты поставщикам по поступлениям ТМЦ, поступления по реализациям)
+- Автосоздание плановых платежей при проведении ТМЦ (дата = дата документа + отсрочка из договора)
+- Фактические платежи с привязкой к строкам плана, контроль «оплата не больше начислений»
+- **Кассовый поток по дням** с подсветкой дефицитных дней — видно кассовый разрыв заранее
+- Взаиморасчёты: дебиторка/кредиторка, обороты, **просроченная задолженность** с учётом отсрочек договоров
+
+## 5. Отчёты и аналитика
+- Регистр исполнения работ (план/приход по сметам, факт/расход по отчётам) с группировками и итогами
+- Карточка себестоимости объекта, оборотно-сальдовая по затратам, отчёт отклонений (план/факт с порогом %), рентабельность по объектам/договорам
+- **Drilldown**: из любой цифры отчёта проваливаешься до исходного документа
+- Экспорт всего в Excel/CSV, дашборд со счётчиками
+
+## 6. Работа офлайн и распределённая
+- Каждый объект/прораб может работать в своей локальной базе **без интернета**, обмен с офисом пакетами (P2P, в т.ч. через relay-брокер для тех, кто за NAT)
+- Разрешение конфликтов версий вручную, пересборка всех регистров после обмена автоматически
+
+## 7. Организация и старт
+- Импорт справочников и спецификаций **из 1С (DBF-выгрузка)** и из старых баз — без набивания НСИ руками
+- Справочники: контрагенты, объекты, работы, физлица (со ставками), организации, договоры (с отсрочками), материалы, ед. изм., элементы затрат, машины
+- Роли: админ / менеджер / прораб (прораб видит только свои объекты и свои табели)
+- Удобный интерфейс «как в 1С, но понятный»: журналы с настройкой колонок, ввод на основании, копирование, контекстные меню, вкладки как в браузере
+
+---
+
+# Блок 2. Что можно докрутить (потенциал доработок и интеграций)
+
+## Юридически значимые документы и ЭДО
+- Автоформирование **КС-2, КС-3, М-29, справок** из уже введённых данных (смета + дневные отчёты = акт) — сейчас есть свой акт, формы КС — прямая доработка печатных форм
+- Интеграция с **Диадок/СБИС/Контур** — подписание и отправка актов/счетов заказчикам прямо из системы
+- Загрузка входящих счетов-фактур и УПД поставщиков из ЭДО в поступления ТМЦ (профили импорта уже готовы, не хватает только коннектора)
+
+## 1С и бухгалтерия
+- Двусторонний обмен с **1С:Бухгалтерией**: выгрузка документов (ТМЦ, платежи, зарплата) в проводки, загрузка справочников и остатков
+- CTM остаётся оперативным контуром, бухгалтер — в своей 1С; сейчас есть импорт DBF и text-обмен, коннектор обмена — логичная надстройка
+
+## Банки
+- Интеграция с **банковскими API** (Директбанк, СберБизнес API, Т-Банк): автозагрузка выписки в платежи, сверка плана/факта платёжного календара
+- Подача платежей в банк из платёжного календаря
+
+## Поле и мобility
+- **Мобильное приложение прораба**: дневной отчёт с телефона, фотофиксация этапов, геоотметка, чек-листы по ТБ (фронт уже веб — WebView/PWA дешевле нативного)
+- **Telegram/WhatsApp-бот**: уведомления о просрочках заказчиков, кассовых разрывах на неделю вперёд, отклонениях факт/план > X%; ввод факта работ сообщением
+- **GPS-мониторинг техники** (Wialon/Омникомм): автозаполнение рапортов машин по моточасам и заправкам
+- СКУД/биометрия на объекте → автотабель
+
+## Сметные программы
+- Импорт смет из **ГрандСмета / Smeta.ru** (XML/ARPS) — каталог работ и text-import уже позволяют это без переписывания ядра
+- Подключение нормативных баз ГЭСН/ФЕР/ТЕР к каталогу работ
+
+## Зарплата и кадры
+- Расчёт ЗП по табелям (сейчас табель даёт часы×ставку — добавить расчётную ведомость, авансы, удержания, РКО)
+- Кадровый минимум: приём/увольнение, отпуска → влияют на табель
+
+## Закупки
+- Заявки на закупку из потребности по спецификациям («до конца этапа не хватает X мешков — сформировать заявку»)
+- Отправка заявок поставщикам, сравнение цен, мини-тендер между поставщиками
+
+## CRM и продажи
+- Воронка тендеров/заявок до договора, конвертация в объект+смету (ввод на основании уже есть)
+
+## Аналитика и AI
+- Подключение **BI (Power BI/Metabase/Yandex DataLens)** — есть read-only слой и инженерная консоль, отдаём витрину данных
+- Прогноз кассовых разрывов на основе календаря и истории оплат заказчиков
+- OCR входящих счетов → черновик поступления ТМЦ
+- Автоматическое выявление аномалий (перерасход материалов vs нормы)
+
+## Платформа
+- Открытый REST API для любых интеграций (инфраструктура уже есть)
+- Облачная версия / аренда (SaaS), мультикомпания/холдинг (PostgreSQL-бэкенд уже поддерживается)
+
+---
+
+# Бонус: вопросы для интервью с подрядчиком (выявление болей)
+
+1. «В чём сейчас считаете план/факт по объектам — Excel, 1С, на бумаге? Сколько времени уходит в месяц?»
+2. «Как узнаёте, что по объекту перерасход, — до или после того, как деньги потрачены?»
+3. «Как прораб передаёт данные в офис — звонки, фото, везёт бумаги? Теряется?»
+4. «Кто и как считает зарплату рабочим? Сколько занимает табелирование?»
+5. «Была ли ситуация, когда заказчик задержал оплату, а вы это поздно заметили? Как контролируете дебиторку?»
+6. «Планируете ли деньги на неделю/месяц вперёд? Видите ли кассовые разрывы заранее?»
+7. «Сколько времени уходит на подготовку КС-2/КС-3, М-29, актов субподрядчикам?»
+8. «Как сверяетесь с поставщиками — входите в накладные вручную?»
+9. «Что мешает вести учёт в 1С — дорого внедрение, некому вести, прорабы не осилят?»
+10. «Если бы система делала одну вещь, за которую не жалко платить — какую?»
+
+Каждый ответ почти наверняка ложится на существующую функцию CTM или на одну из доработок из блока 2 — после интервью сможете собрать УТП из того, что болит чаще всего.
+
+Если нужно, могу оформить это в виде продающего one-pager (PDF/страница) или таблицы «боль → возможность CTM» для презентации заказчику.
+    <div class="chip">BI-аналитика и прогноз разрывов</div>
+  </div>
+
+  <div class="footer">
+    <div class="cta">
+      Демо на ваших данных — 30 минут
+      <small>Покажем ваш объект в системе: смета, факт, деньги. Оцените до покупки.</small>
+    </div>
+    <div class="contacts">
+      Тел.: +7 (___) ___-__-__<br>
+      email: sale@ctm.example · ctm.example
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

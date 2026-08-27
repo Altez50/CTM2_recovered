@@ -69,7 +69,16 @@ async function save() {
 }
 async function reload() { if (!form.value.id) return; const r = await getCostCalculation(form.value.id); form.value = r.data; markSaved() }
 async function calculate() { try { const r = await calculateCost(form.value.id!); result.value = r.data; await reload() } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка расчёта' } }
-async function post() { try { await postCostCalculation(form.value.id!); await reload() } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
+async function post() {
+  try {
+    // 1С-поведение: перед проведением записать форму, иначе несохранённые правки теряются
+    const r = await updateCostCalculation(form.value.id!, buildPayload(form.value))
+    form.value = r.data
+    markSaved()
+    await postCostCalculation(form.value.id!)
+    await reload()
+  } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' }
+}
 async function unpost() { if (!window.confirm('Отменить проведение?')) return; try { await unpostCostCalculation(form.value.id!); result.value = null; await reload() } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка' } }
 
 onBeforeRouteLeave((() => {

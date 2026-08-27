@@ -13,26 +13,50 @@
         </div>
         <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
         <DataTable :columns="columns" :rows="rows as any[]" :loading="loading" empty-text="Нет отклонений">
+          <template #cell-planned_amount="{ row }"><span class="drilldown-cell" @click="openDrilldown('planned', `План: ${row.work_name || '—'}`, { period_from: period, period_to: period, object_id: objectId || undefined, work_id: row.work_id })">{{ fmt(row.planned_amount) }}</span></template>
+          <template #cell-actual_amount="{ row }"><span class="drilldown-cell" @click="openDrilldown('actual', `Факт: ${row.work_name || '—'}`, { period_from: period, period_to: period, object_id: objectId || undefined, work_id: row.work_id })">{{ fmt(row.actual_amount) }}</span></template>
           <template #cell-deviation="{ row }"><span :class="{ negative: row.deviation > 0, positive: row.deviation < 0 }">{{ fmt(row.deviation) }}</span></template>
           <template #cell-deviation_pct="{ row }"><span :class="{ negative: row.deviation > 0 }">{{ row.deviation_pct.toFixed(1) }}%</span></template>
         </DataTable>
       </div>
     </section>
+    <CostDrilldownDialog
+      :open="drilldown.open"
+      :title="drilldown.title"
+      :register="drilldown.register"
+      :filters="drilldown.filters"
+      @close="drilldown.open = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import DataTable from '../../components/common/DataTable.vue'
+import CostDrilldownDialog from '../../components/reports/CostDrilldownDialog.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import { getCostDeviations } from '../../api/costAccounting'
-import type { DeviationRow } from '../../types/costAccounting'
+import type { DeviationRow, DrilldownQuery } from '../../types/costAccounting'
 
 const props = defineProps<{ tabId?: string }>()
 useHeaderBar(props.tabId, ref('Отчёт по отклонениям'), ref([]))
 
 const rows = ref<DeviationRow[]>([]); const loading = ref(false); const error = ref('')
 const period = ref(''); const threshold = ref(0); const objectId = ref(0)
+
+const drilldown = reactive({
+  open: false,
+  title: '',
+  register: 'actual' as 'actual' | 'planned' | 'overhead',
+  filters: {} as DrilldownQuery,
+})
+
+function openDrilldown(register: 'actual' | 'planned' | 'overhead', title: string, filters: DrilldownQuery) {
+  drilldown.register = register
+  drilldown.title = title
+  drilldown.filters = filters
+  drilldown.open = true
+}
 
 const columns = [{ key: 'work_name', label: 'Работа' }, { key: 'cost_element_name', label: 'Элемент' }, { key: 'planned_amount', label: 'План' }, { key: 'actual_amount', label: 'Факт' }, { key: 'deviation', label: 'Отклонение' }, { key: 'deviation_pct', label: '%' }]
 
@@ -45,4 +69,4 @@ async function loadData() {
 }
 onMounted(() => { period.value = new Date().toISOString().slice(0, 7) })
 </script>
-<style scoped>.negative { color: var(--danger, #dc2626); } .positive { color: var(--success, #16a34a); }</style>
+<style scoped>.drilldown-cell { cursor: pointer; text-decoration: underline dotted; } .negative { color: var(--danger, #dc2626); } .positive { color: var(--success, #16a34a); }</style>

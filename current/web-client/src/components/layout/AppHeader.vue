@@ -19,7 +19,39 @@
           <span class="muted">{{ user.role }}</span>
           <strong>{{ user.full_name || user.username }}</strong>
         </div>
-        <button class="button button-primary" type="button" @click="$emit('logout')">Выйти</button>
+        <button
+          class="button button-primary logout-btn"
+          type="button"
+          aria-label="Выйти"
+          title="Выйти"
+          @click="$emit('logout')"
+        >
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+            <path
+              d="M6 2.5H3.5A1 1 0 0 0 2.5 3.5v9A1 1 0 0 0 3.5 13.5H6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M9.5 11L13 7.5 9.5 4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M13 7.5H6.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
       </div>
     </div>
     <div v-if="hasActions" class="header-toolbar">
@@ -75,6 +107,8 @@ function actionVariantClass(variant: HeaderAction['variant']) {
 
 <style scoped>
 .header {
+  position: relative;
+  z-index: 100;
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
@@ -152,10 +186,21 @@ function actionVariantClass(variant: HeaderAction['variant']) {
 
 .header-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; /* Не переносится — не увеличивает высоту header-row */
   align-items: center;
   justify-content: flex-end;
   gap: 0.85rem;
+  flex-shrink: 0;
+}
+
+.logout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  min-width: 2.35rem;
+  padding: 0;
+  aspect-ratio: 1;
 }
 
 .user-card {
@@ -182,14 +227,21 @@ button.button {
   line-height: 1;
 }
 
+/* Ниже FHD: user-card autohide — блок масштабируется, а не растит высоту.
+   Роль и имя скрыты, остаётся только компактная кнопка выхода. */
+@media (max-width: 1919px) {
+  .header-actions {
+    gap: 0.5rem;
+  }
+
+  .user-card {
+    display: none;
+  }
+}
+
 @media (max-width: 767px) {
   .header-row {
     flex-wrap: wrap;
-  }
-
-  .header-actions {
-    flex-direction: column;
-    align-items: stretch;
   }
 
   .menu-toggle {

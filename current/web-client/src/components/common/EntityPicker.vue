@@ -325,6 +325,8 @@ watch(search, () => {
   display: flex;
   align-items: stretch;
   width: 100%;
+  height: var(--control-height, 3rem);
+  min-height: var(--control-height, 3rem);
   border: 1px solid var(--border);
   border-radius: var(--radius-input, 18px);
   background: rgba(255, 255, 255, 0.8);
@@ -363,7 +365,8 @@ watch(search, () => {
 .ref-input-field {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 42px;
+  height: 100%;
+  min-height: 0;
   display: flex;
   align-items: center;
   border: none;
@@ -406,6 +409,7 @@ watch(search, () => {
   font-weight: 700;
   cursor: pointer;
   min-width: 27px;
+  height: 100%;
   padding: 0 0.4rem;
   transition: background 120ms, color 120ms;
 }
@@ -447,11 +451,13 @@ watch(search, () => {
 
 /* === Compact mode === */
 .ref-input-row.compact {
+  height: var(--control-height-compact, 2rem);
+  min-height: var(--control-height-compact, 2rem);
   border-radius: 10px;
 }
 
 .ref-input-row.compact .ref-input-field {
-  min-height: 32px;
+  min-height: 0;
   padding: 0.3rem 0.55rem;
 }
 

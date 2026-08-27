@@ -1342,6 +1342,44 @@ def unpost_daily_report(connection: sqlite3.Connection, *, report_id: int, user:
     connection.commit()
 
 
+_WORK_EXECUTION_SORT_WHITELIST = {
+    "period": "wer.period",
+    "recorder_number": "recorder_number",
+    "customer_name": "cust.name",
+    "contract_number": "ct.number",
+    "object_name": "o.name",
+    "estimate_number": "e.number",
+    "work_name": "w.name",
+    "quantity_income": "wer.quantity_income",
+    "quantity_expense": "wer.quantity_expense",
+    "sum_income": "wer.sum_income",
+    "sum_expense": "wer.sum_expense",
+}
+
+# Поля быстрого отбора: {field: (sql_expr, op)} — op ∈ {'like','eq'}
+_WORK_EXECUTION_FILTER_COLUMNS = {
+    "customer_id": ("e.customer_id", "eq"),
+    "contract_id": ("e.contract_id", "eq"),
+    "object_id": ("wer.object_id", "eq"),
+    "estimate_id": ("wer.estimate_id", "eq"),
+    "work_id": ("wer.work_id", "eq"),
+}
+
+# Диапазонные фильтры: {suffix: sql_expr_with_placeholder}
+_WORK_EXECUTION_RANGE_FILTERS = {
+    "period_from": "wer.period >= ?",
+    "period_to": "wer.period <= ?",
+    "quantity_income_from": "wer.quantity_income >= ?",
+    "quantity_income_to": "wer.quantity_income <= ?",
+    "quantity_expense_from": "wer.quantity_expense >= ?",
+    "quantity_expense_to": "wer.quantity_expense <= ?",
+    "sum_income_from": "wer.sum_income >= ?",
+    "sum_income_to": "wer.sum_income <= ?",
+    "sum_expense_from": "wer.sum_expense >= ?",
+    "sum_expense_to": "wer.sum_expense <= ?",
+}
+
+
 def query_work_execution(
     connection: sqlite3.Connection,
     *,
@@ -1355,10 +1393,17 @@ def query_work_execution(
     customer_id: int | None = None,
     contract_id: int | None = None,
     group_by: list[str] | None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    filters: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], Pagination, dict[str, float]]:
+    from api.list_query import apply_quick_filters, order_by_clause
+
     page, page_size = _normalize_page(page, page_size)
     params: list[Any] = []
     where_parts = ["1 = 1"]
+
+    # Поля формы-фильтра (период, объект, смета, работа, заказчик, договор)
     if period_from:
         where_parts.append("wer.period >= ?")
         params.append(period_from)
@@ -1380,6 +1425,30 @@ def query_work_execution(
     if contract_id:
         where_parts.append("e.contract_id = ?")
         params.append(contract_id)
+
+    # Быстрый отбор по колонкам (f_*)
+    if filters:
+        # Диапазонные фильтры
+        for suffix, sql_expr in _WORK_EXECUTION_RANGE_FILTERS.items():
+            raw = filters.get(f"f_{suffix}")
+            if raw:
+                where_parts.append(sql_expr)
+                params.append(raw)
+        # Регистратор (LIKE по номеру)
+        f_recorder = filters.get("f_recorder")
+        if f_recorder:
+            where_parts.append("(re.number LIKE ? OR dr.number LIKE ?)")
+            params.extend([f"%{f_recorder}%", f"%{f_recorder}%"])
+        # Eq-фильтры
+        apply_quick_filters(where_parts, params, filters, _WORK_EXECUTION_FILTER_COLUMNS)
+
+    order_sql = order_by_clause(
+        sort_by, sort_order,
+        _WORK_EXECUTION_SORT_WHITELIST,
+        default_column="wer.period",
+        default_order="DESC",
+        tiebreaker="wer.id",
+    )
 
     rows = connection.execute(
         f"""
@@ -1405,7 +1474,7 @@ def query_work_execution(
         LEFT JOIN estimates re ON wer.recorder_type = 'estimate' AND re.id = wer.recorder_id
         LEFT JOIN daily_reports dr ON wer.recorder_type = 'daily_report' AND dr.id = wer.recorder_id
         WHERE {' AND '.join(where_parts)}
-        ORDER BY wer.period DESC, wer.id DESC
+        {order_sql}
         """,
         params,
     ).fetchall()
@@ -4119,6 +4188,11 @@ def _post_daily_report_to_actual_costs(
 
     object_id = report.get("object_id")
     estimate_id = report.get("estimate_id")
+    # Разрешаем договор из сметы
+    contract_row = connection.execute(
+        "SELECT contract_id FROM estimates WHERE id = ?", (estimate_id,)
+    ).fetchone() if estimate_id else None
+    contract_id = int(contract_row["contract_id"]) if contract_row and contract_row["contract_id"] else None
 
     for line in report.get("lines", []):
         if line.get("is_group") or not line.get("work_id"):
@@ -4141,11 +4215,11 @@ def _post_daily_report_to_actual_costs(
         connection.execute(
             """INSERT INTO actual_costs
                (period, date, registrar_type, registrar_id, object_id, estimate_id,
-                work_id, cost_element_id, quantity, amount, created_at)
-               VALUES (?, ?, 'DailyReport', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                work_id, cost_element_id, quantity, amount, contract_id, created_at)
+               VALUES (?, ?, 'DailyReport', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 period, doc_date, report_id, object_id, estimate_id,
-                work_id, labor_ce, actual_labor, amount, _now_iso(),
+                work_id, labor_ce, actual_labor, amount, contract_id, _now_iso(),
             ),
         )
 
@@ -4185,6 +4259,11 @@ def _post_timesheet_to_actual_costs(
 
     object_id = timesheet.get("object_id")
     estimate_id = timesheet.get("estimate_id")
+    # Разрешаем договор из сметы
+    ts_contract_row = connection.execute(
+        "SELECT contract_id FROM estimates WHERE id = ?", (estimate_id,)
+    ).fetchone() if estimate_id else None
+    ts_contract_id = int(ts_contract_row["contract_id"]) if ts_contract_row and ts_contract_row["contract_id"] else None
 
     for line in timesheet.get("lines", []):
         total_hours = float(line.get("total_hours") or 0)
@@ -4204,11 +4283,11 @@ def _post_timesheet_to_actual_costs(
         connection.execute(
             """INSERT INTO actual_costs
                (period, date, registrar_type, registrar_id, object_id, estimate_id,
-                work_id, cost_element_id, quantity, amount, created_at)
-               VALUES (?, ?, 'Timesheet', ?, ?, ?, 0, ?, ?, ?, ?)""",
+                work_id, cost_element_id, quantity, amount, contract_id, created_at)
+               VALUES (?, ?, 'Timesheet', ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
             (
                 period, doc_date, timesheet_id, object_id, estimate_id,
-                labor_ce, total_hours, amount, _now_iso(),
+                labor_ce, total_hours, amount, ts_contract_id, _now_iso(),
             ),
         )
 

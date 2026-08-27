@@ -21,13 +21,16 @@ from api.cost_accounting_services import (
     delete_overhead_expense,
     delete_subcontract_acceptance,
     distribute_overhead,
+    get_actual_costs_drilldown,
     get_cost_card,
     get_cost_calculation,
     get_deviations,
     get_machine,
     get_machinery_usage_report,
     get_material_consumption,
+    get_overhead_drilldown,
     get_overhead_expense,
+    get_planned_costs_drilldown,
     get_profitability,
     get_subcontract_acceptance,
     get_turnover_balance,
@@ -666,8 +669,84 @@ def cost_profitability_report(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     period: str | None = None,
+    group_by: str = Query(default="object", regex="^(object|contract|object_contract)$"),
 ) -> ApiResponse:
-    return ApiResponse(data=get_profitability(connection, period=period))
+    return ApiResponse(data=get_profitability(connection, period=period, group_by=group_by))
+
+
+# ── Drilldown (COST_DRILLDOWN_SPEC.md) ────────────────────────────────────
+
+
+@router.get("/drilldown/actual-costs", response_model=ApiResponse)
+def actual_costs_drilldown(
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    period_from: str | None = None,
+    period_to: str | None = None,
+    period_before: str | None = None,
+    object_id: int | None = None,
+    cost_element_id: int | None = None,
+    work_id: int | None = None,
+    estimate_id: int | None = None,
+    contract_id: int | None = None,
+    amount_sign: str | None = Query(default=None, regex="^(positive|negative)$"),
+    registrar_type: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=500),
+) -> ApiResponse:
+    items, pagination, totals = get_actual_costs_drilldown(
+        connection,
+        period_from=period_from, period_to=period_to, period_before=period_before,
+        object_id=object_id, cost_element_id=cost_element_id, work_id=work_id,
+        estimate_id=estimate_id, contract_id=contract_id,
+        amount_sign=amount_sign, registrar_type=registrar_type,
+        page=page, page_size=page_size,
+    )
+    return ApiResponse(data={"items": items, "totals": totals}, pagination=pagination)
+
+
+@router.get("/drilldown/planned-costs", response_model=ApiResponse)
+def planned_costs_drilldown(
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    period_from: str | None = None,
+    period_to: str | None = None,
+    object_id: int | None = None,
+    cost_element_id: int | None = None,
+    work_id: int | None = None,
+    estimate_id: int | None = None,
+    contract_id: int | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=500),
+) -> ApiResponse:
+    items, pagination, totals = get_planned_costs_drilldown(
+        connection,
+        period_from=period_from, period_to=period_to,
+        object_id=object_id, cost_element_id=cost_element_id, work_id=work_id,
+        estimate_id=estimate_id, contract_id=contract_id,
+        page=page, page_size=page_size,
+    )
+    return ApiResponse(data={"items": items, "totals": totals}, pagination=pagination)
+
+
+@router.get("/drilldown/overhead", response_model=ApiResponse)
+def overhead_drilldown(
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    period_from: str | None = None,
+    period_to: str | None = None,
+    object_id: int | None = None,
+    work_id: int | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=500),
+) -> ApiResponse:
+    items, pagination, totals = get_overhead_drilldown(
+        connection,
+        period_from=period_from, period_to=period_to,
+        object_id=object_id, work_id=work_id,
+        page=page, page_size=page_size,
+    )
+    return ApiResponse(data={"items": items, "totals": totals}, pagination=pagination)
 
 
 # ── Audit ─────────────────────────────────────────────────────────────────

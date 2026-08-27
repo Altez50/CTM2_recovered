@@ -1,6 +1,6 @@
 <template>
   <aside :class="['sidebar', 'panel', { open, compact, hidden: !open }]" aria-label="Навигационное меню">
-    <div v-for="section in sections" :key="section.id" class="menu-block">
+    <div v-for="section in visibleSections" :key="section.id" class="menu-block">
       <!-- Section header: collapse/expand section + collapsed-items indicator -->
       <button
         type="button"
@@ -95,8 +95,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '../../stores/auth'
 
-type NavSectionId = 'documents' | 'reports' | 'references'
+type NavSectionId = 'documents' | 'reports' | 'references' | 'engineering'
 
 interface NavItem {
   id: string
@@ -119,6 +120,7 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
+const auth = useAuthStore()
 
 // -- Storage keys -----------------------------------------------------------
 const COLLAPSED_ITEMS_KEY = 'ctm.sidebar.collapsed-items'
@@ -130,7 +132,13 @@ const sections = [
   { id: 'documents' as const, label: 'Документы' },
   { id: 'reports' as const, label: 'Отчёты' },
   { id: 'references' as const, label: 'Справочники' },
+  { id: 'engineering' as const, label: 'Инженерия' },
 ]
+
+// Инженерный раздел видим только администраторам.
+const visibleSections = computed(() =>
+  auth.isAdmin ? sections : sections.filter((s) => s.id !== 'engineering'),
+)
 
 // -- All navigation items ---------------------------------------------------
 const items: NavItem[] = [
@@ -305,6 +313,12 @@ const items: NavItem[] = [
     description: 'Обмен между базами',
     icon: '⟳', section: 'references',
     initiallyCollapsed: true,
+  },
+  // Engineering (admin only)
+  {
+    id: 'engineering-tables', to: '/engineering/tables', label: 'Таблицы', shortLabel: 'Тбл',
+    description: 'Просмотр таблиц и консоль запросов',
+    icon: '{EIF', section: 'engineering',
   },
 ]
 

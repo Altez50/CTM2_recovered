@@ -25,24 +25,32 @@
 
         <div v-if="objectName && rows.length" class="object-title">{{ objectName }}</div>
         <DataTable :columns="columns" :rows="rows as any[]" :loading="loading" empty-text="Нет данных за период">
-          <template #cell-opening_balance="{ row }">{{ fmt(row.opening_balance) }}</template>
-          <template #cell-inflow="{ row }">{{ fmt(row.inflow) }}</template>
-          <template #cell-outflow="{ row }">{{ fmt(row.outflow) }}</template>
+          <template #cell-opening_balance="{ row }"><span class="drilldown-cell" @click="openDrilldown('actual', `Входящее сальдо: ${row.cost_element_name}`, { period_before: periodFrom, object_id: objectId || undefined, cost_element_id: row.cost_element_id })">{{ fmt(row.opening_balance) }}</span></template>
+          <template #cell-inflow="{ row }"><span class="drilldown-cell" @click="openDrilldown('actual', `Приход: ${row.cost_element_name}`, { period_from: periodFrom, period_to: periodTo, object_id: objectId || undefined, cost_element_id: row.cost_element_id, amount_sign: 'positive' })">{{ fmt(row.inflow) }}</span></template>
+          <template #cell-outflow="{ row }"><span class="drilldown-cell" @click="openDrilldown('actual', `Расход: ${row.cost_element_name}`, { period_from: periodFrom, period_to: periodTo, object_id: objectId || undefined, cost_element_id: row.cost_element_id, amount_sign: 'negative' })">{{ fmt(row.outflow) }}</span></template>
           <template #cell-closing_balance="{ row }"><strong>{{ fmt(row.closing_balance) }}</strong></template>
         </DataTable>
       </div>
     </section>
+    <CostDrilldownDialog
+      :open="drilldown.open"
+      :title="drilldown.title"
+      :register="drilldown.register"
+      :filters="drilldown.filters"
+      @close="drilldown.open = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import DataTable from '../../components/common/DataTable.vue'
+import CostDrilldownDialog from '../../components/reports/CostDrilldownDialog.vue'
 import EntityPicker from '../../components/common/EntityPicker.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import { getCostTurnover } from '../../api/costAccounting'
 import { listReferences } from '../../api/references'
-import type { TurnoverRow } from '../../types/costAccounting'
+import type { DrilldownQuery, TurnoverRow } from '../../types/costAccounting'
 import type { ObjectRecord } from '../../types/models'
 
 const props = defineProps<{ tabId?: string }>()
@@ -55,6 +63,20 @@ const periodFrom = ref('')
 const periodTo = ref('')
 const objectId = ref(0)
 const objectName = ref<string | null>(null)
+
+const drilldown = reactive({
+  open: false,
+  title: '',
+  register: 'actual' as 'actual' | 'planned' | 'overhead',
+  filters: {} as DrilldownQuery,
+})
+
+function openDrilldown(register: 'actual' | 'planned' | 'overhead', title: string, filters: DrilldownQuery) {
+  drilldown.register = register
+  drilldown.title = title
+  drilldown.filters = filters
+  drilldown.open = true
+}
 
 const columns = [{ key: 'cost_element_name', label: 'Элемент затрат' }, { key: 'opening_balance', label: 'Начальное сальдо' }, { key: 'inflow', label: 'Приход' }, { key: 'outflow', label: 'Расход' }, { key: 'closing_balance', label: 'Конечное сальдо' }]
 
@@ -93,5 +115,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.drilldown-cell { cursor: pointer; text-decoration: underline dotted; }
 .object-title { font-size: 1.15rem; font-weight: 600; margin: 1rem 0; }
 </style>

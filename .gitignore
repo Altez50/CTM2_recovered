@@ -40,6 +40,8 @@ Desktop.ini
 coverage/
 .nyc_output/
 .pytest_cache/
+test-results/
+playwright-report/
 
 # Deploy local overrides
 deploy/.deploy.*.env

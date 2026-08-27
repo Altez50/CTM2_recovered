@@ -11,7 +11,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from api.config import settings
 from api.database import initialize_database
-from api.routers import auth, cost_accounting, documents, goods, payments, references, registers, settlements, sync, system, works
+from api.routers import auth, cost_accounting, documents, engineering, goods, payments, references, registers, settlements, sync, system, works
 
 
 class GZipRequestMiddleware:
@@ -93,6 +93,7 @@ app.include_router(registers.router)
 app.include_router(cost_accounting.router)
 app.include_router(sync.router)
 app.include_router(system.router)
+app.include_router(engineering.router)
 
 
 @app.on_event("startup")

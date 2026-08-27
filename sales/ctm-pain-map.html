@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CTM — карта болей подрядчика</title>
+<style>
+  :root{
+    --ink:#1e293b;
+    --muted:#64748b;
+    --accent:#d97706;
+    --accent-soft:#fef3c7;
+    --line:#e2e8f0;
+    --bg:#f8fafc;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+    line-height:1.45;
+    font-size:14px;
+  }
+  .page{max-width:210mm;margin:0 auto;background:#fff;padding:10mm 12mm;box-shadow:0 1px 12px rgba(15,23,42,.08)}
+
+  .top{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--accent);padding-bottom:10px;margin-bottom:12px}
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .logo{font-size:24px;font-weight:800}
+  .logo span{color:var(--accent)}
+  .tag{font-size:12px;color:var(--muted)}
+  .legend{font-size:11.5px;color:var(--muted)}
+  .legend b{color:var(--accent)}
+
+  h1{font-size:20px;font-weight:800;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--muted);margin-bottom:14px}
+
+  h2{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);margin:14px 0 6px}
+
+  table{width:100%;border-collapse:collapse}
+  th{
+    text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;
+    color:var(--muted);border-bottom:2px solid var(--line);padding:5px 8px;
+  }
+  td{
+    font-size:12px;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top;
+  }
+  td.pain{font-style:italic;color:#334155;width:32%}
+  td.sol{width:40%}
+  td.eff{color:var(--muted)}
+  tr.roadmap td.sol{background:var(--accent-soft)}
+
+  .tagr{
+    display:inline-block;font-size:10px;font-weight:700;color:#92400e;background:#fde68a;
+    border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:middle;white-space:nowrap;
+  }
+
+  .note{margin-top:14px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px}
+
+  @media print{
+    body{background:#fff}
+    .page{box-shadow:none;max-width:none;padding:8mm 10mm}
+    @page{size:A4;margin:8mm}
+    h2{break-after:avoid}
+    table{break-inside:auto}
+    tr{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="top">
+    <div class="brand">
+      <div class="logo">CT<span>M</span></div>
+      <div class="tag">карта болей подрядчика → возможности системы</div>
+    </div>
+    <div class="legend">жёлтая строка + <b>доработка</b> — решается небольшой интеграцией/надстройкой</div>
+  </div>
+
+  <h1>Из боли заказчика — в конкретную возможность CTM</h1>
+  <div class="sub">Рабочий материал для интервью и демонстраций: слева — как боль звучит от подрядчика, в центре — чем отвечает система, справа — измеримый эффект.</div>
+
+  <h2>Деньги и платежи</h2>
+  <table>
+    <tr><th>Боль (голос заказчика)</th><th>Как решает CTM</th><th>Что получите</th></tr>
+    <tr>
+      <td class="pain">«Заказчик задержал оплату — узнали поздно»</td>
+      <td class="sol">Отчёт просроченной задолженности с учётом отсрочек по каждому договору</td>
+      <td class="eff">Дебиторка на любую дату, дни просрочки по каждому заказчику</td>
+    </tr>
+    <tr>
+      <td class="pain">«Не знаем, хватит ли денег на зарплату и поставщиков»</td>
+      <td class="sol">Платёжный календарь: план/факт по строкам, автоподбор зарплаты и счетов поставщиков, кассовый поток по дням с подсветкой дефицита</td>
+      <td class="eff">Кассовый разрыв виден за неделю, а не по факту</td>
+    </tr>
+    <tr>
+      <td class="pain">«Платежи идут хаотично, без плана»</td>
+      <td class="sol">График платежей с категориями (этап заказчика, зарплата, поставщик, налоги); проведение накладной автоматически создаёт плановый платёж (дата + отсрочка договора)</td>
+      <td class="eff">Каждая накладная сама попадает в план платежей</td>
+    </tr>
+  </table>
+
+  <h2>Объект и факт работ</h2>
+  <table>
+    <tr><th>Боль (голос заказчика)</th><th>Как решает CTM</th><th>Что получите</th></tr>
+    <tr>
+      <td class="pain">«Данные с объекта едут бумагой и фото, теряются»</td>
+      <td class="sol">Ежедневный отчёт прораба в системе; объект работает офлайн, синхронизируется с офисом пакетами</td>
+      <td class="eff">Факт работ в базе в день выполнения, без двойного ввода</td>
+    </tr>
+    <tr>
+      <td class="pain">«Фактическую себестоимость узнаём после стройки»</td>
+      <td class="sol">Расчёт себестоимости по элементам затрат (материалы, зарплата, машины, субподряд, накладные): план/факт, рентабельность по объектам и договорам</td>
+      <td class="eff">Маржа объекта под контролем в ходе работ</td>
+    </tr>
+    <tr>
+      <td class="pain">«Отклонения от сметы замечаем слишком поздно»</td>
+      <td class="sol">Отчёт отклонений с настраиваемым порогом %, drilldown из любой цифры до исходного документа</td>
+      <td class="eff">Перерасход видно сразу, а не на итогах</td>
+    </tr>
+  </table>
+
+  <h2>Люди и зарплата</h2>
+  <table>
+    <tr><th>Боль (голос заказчика)</th><th>Как решает CTM</th><th>Что получите</th></tr>
+    <tr>
+      <td class="pain">«Табелирование съедает дни каждый месяц»</td>
+      <td class="sol">Автозаполнение табеля из дневных отчётов (часы распределяются автоматически), унифицированная печатная форма</td>
+      <td class="eff">Табель за минуты вместо дней</td>
+    </tr>
+    <tr>
+      <td class="pain">«Спорные часы с рабочими, нет обоснования»</td>
+      <td class="sol">Часы по дням из отчётов + часовые ставки из карточек физлиц; регистр зарплаты хранит историю</td>
+      <td class="eff">Прозрачный расчёт «часы × ставка» по каждому работнику</td>
+    </tr>
+  </table>
+
+  <h2>Материалы и склад</h2>
+  <table>
+    <tr><th>Боль (голос заказчика)</th><th>Как решает CTM</th><th>Что получите</th></tr>
+    <tr>
+      <td class="pain">«Перерасход и потери материалов не видно»</td>
+      <td class="sol">Спецификации работ (нормы расхода), документ «Расход материалов»: лимит vs факт, остатки по объектам, отрицательные остатки подсвечены красным</td>
+      <td class="eff">Списание сверяется с нормой по каждой работе</td>
+    </tr>
+    <tr>
+      <td class="pain">«Накладные поставщиков вбиваем руками»</td>
+      <td class="sol">Загрузка поступлений из Excel по профилям сопоставления колонок, автосоздание карточек материалов из строк</td>
+      <td class="eff">Профиль настроили один раз — дальше просто грузите файлы</td>
+    </tr>
+  </table>
+
+  <h2>Документы и сметы</h2>
+  <table>
+    <tr><th>Боль (голос заказчика)</th><th>Как решает CTM</th><th>Что получите</th></tr>
+    <tr>
+      <td class="pain">«Акты и отчёты заказчику делаем вручную неделями»</td>
+      <td class="sol">Печать акта по смете и акта по дневному отчёту (PDF/Excel) из уже введённых данных</td>
+      <td class="eff">Документ формируется одной кнопкой, без перепечатки</td>
+    </tr>
+    <tr class="roadmap">
+      <td class="pain">«Нужны именно КС-2 / КС-3, а не ваши акты»</td>
+      <td class="sol">Печатные формы КС-2/КС-3 на основе сметы и отчётов<span class="tagr">доработка</span></td>
+      <td class="eff">Знакомые формы для заказчика и банка</td>
+    </tr>
+    <tr>
+      <td class="pain">«Сметы в ГрандСмете/Excel — данные не связаны с учётом»</td>
+      <td class="sol">Импорт смет из Excel/текста с автосозданием работ и единиц; каталог работ с ценами и нормами трудоёмкости</td>
+      <td class="eff">Одна база работ от сметы до факта</td>
+    </tr>
+    <tr class="roadmap">
+      <td class="pain">«Переносить НСИ из 1С некому и дорого»</td>
+      <td class="sol">Есть импорт справочников и спецификаций из DBF-выгрузки 1С; прямой коннектор обмена с 1С:Бухгалтерией<span class="tagr">доработка</span></td>
+      <td class="eff">Старт на готовой базе, бухгалтерия получает документы автоматически</td>
+    </tr>
+  </table>
+
+  <h2>Аналитика и контроль</h2>
+  <table>
+    <tr><th>Боль (голос заказчика)</th><th>Как решает CTM</th><th>Что получите</th></tr>
+    <tr>
+      <td class="pain">«У каждого свой Excel, цифры не сходятся»</td>
+      <td class="sol">Единая база, отчёты (карточка себестоимости, ОСВ по затратам и взаиморасчётам, рентабельность) с экспортом CSV/Excel, дашборд</td>
+      <td class="eff">Все считают по одним и тем же цифрам</td>
+    </tr>
+    <tr>
+      <td class="pain">«Прорабы 1С не осилят»</td>
+      <td class="sol">Понятный веб-интерфейс с вкладками; роль «прораб» видит только свои объекты и табели</td>
+      <td class="eff">Обучение прораба — за один день</td>
+    </tr>
+    <tr class="roadmap">
+      <td class="pain">«Хочется BI, прогнозы, автоматизацию поля»</td>
+      <td class="sol">Открытый REST API и read-витрина данных; мобильное приложение прораба, GPS-мониторинг техники, банковские выписки, ЭДО<span class="tagr">доработка</span></td>
+      <td class="eff">Аналитика и автоматизация без ограничений продукта</td>
+    </tr>
+  </table>
+
+  <div class="note">
+    Как пользоваться: на интервью отмечайте, какие фразы произносит заказчик, — совпадение с левой колонкой = готовый сценарий демонстрации CTM. Частые боли, не покрытые таблицей, — источник доработок и УТП.
+  </div>
+
+</div>
+</body>
+</html>

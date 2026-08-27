@@ -67,6 +67,16 @@ def _now_iso() -> str:
     return datetime.now().isoformat()
 
 
+def _resolve_contract_id(connection: sqlite3.Connection, estimate_id: int | None) -> int | None:
+    """Разрешить contract_id из сметы. Возвращает None, если смета не найдена или contract_id пуст."""
+    if not estimate_id:
+        return None
+    row = connection.execute(
+        "SELECT contract_id FROM estimates WHERE id = ?", (estimate_id,)
+    ).fetchone()
+    return int(row["contract_id"]) if row and row["contract_id"] else None
+
+
 def _cost_element_id(connection: sqlite3.Connection, kind: str) -> int | None:
     row = connection.execute(
         "SELECT id FROM cost_elements WHERE kind = ? AND marked_for_deletion = 0", (kind,)
@@ -341,6 +351,7 @@ def post_material_consumption(
     materials_ce = _get_cost_element_id(connection, "materials")
     period = str(doc["date"])[:7]
     doc_date = str(doc["date"])[:10]
+    contract_id = _resolve_contract_id(connection, doc.get("estimate_id"))
 
     connection.execute(
         "DELETE FROM actual_costs WHERE registrar_type = 'MaterialConsumption' AND registrar_id = ?",
@@ -351,14 +362,14 @@ def post_material_consumption(
         connection.execute(
             """INSERT INTO actual_costs
                (period, date, registrar_type, registrar_id, object_id, estimate_id,
-                work_id, cost_element_id, quantity, amount, created_at)
-               VALUES (?, ?, 'MaterialConsumption', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                work_id, cost_element_id, quantity, amount, contract_id, created_at)
+               VALUES (?, ?, 'MaterialConsumption', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 period, doc_date, doc_id,
                 doc.get("object_id"), doc.get("estimate_id"),
                 line.get("work_id"), ce_id,
                 line.get("actual_quantity", 0), line.get("sum", 0),
-                _now_iso(),
+                contract_id, _now_iso(),
             ),
         )
     connection.execute(
@@ -561,6 +572,7 @@ def post_machinery_usage_report(
     labor_ce = _get_cost_element_id(connection, "labor")
     period = str(doc["date"])[:7]
     doc_date = str(doc["date"])[:10]
+    contract_id = _resolve_contract_id(connection, doc.get("estimate_id"))
 
     connection.execute(
         "DELETE FROM actual_costs WHERE registrar_type = 'MachineryUsageReport' AND registrar_id = ?",
@@ -571,14 +583,14 @@ def post_machinery_usage_report(
         connection.execute(
             """INSERT INTO actual_costs
                (period, date, registrar_type, registrar_id, object_id, estimate_id,
-                work_id, cost_element_id, quantity, amount, created_at)
-               VALUES (?, ?, 'MachineryUsageReport', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                work_id, cost_element_id, quantity, amount, contract_id, created_at)
+               VALUES (?, ?, 'MachineryUsageReport', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 period, doc_date, doc_id,
                 doc.get("object_id"), doc.get("estimate_id"),
                 line.get("work_id"), machinery_ce,
                 line.get("hours", 0), line.get("machine_cost", 0),
-                _now_iso(),
+                contract_id, _now_iso(),
             ),
         )
         # LABOR (operator) movement
@@ -587,14 +599,14 @@ def post_machinery_usage_report(
             connection.execute(
                 """INSERT INTO actual_costs
                    (period, date, registrar_type, registrar_id, object_id, estimate_id,
-                    work_id, cost_element_id, quantity, amount, created_at)
-                   VALUES (?, ?, 'MachineryUsageReport', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    work_id, cost_element_id, quantity, amount, contract_id, created_at)
+                   VALUES (?, ?, 'MachineryUsageReport', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     period, doc_date, doc_id,
                     doc.get("object_id"), doc.get("estimate_id"),
                     line.get("work_id"), labor_ce,
                     line.get("hours", 0), operator_labor,
-                    _now_iso(),
+                    contract_id, _now_iso(),
                 ),
             )
     connection.execute(
@@ -794,6 +806,7 @@ def post_subcontract_acceptance(
     sub_ce = _get_cost_element_id(connection, "subcontract")
     period = str(doc["date"])[:7]
     doc_date = str(doc["date"])[:10]
+    contract_id = _resolve_contract_id(connection, doc.get("estimate_id"))
 
     connection.execute(
         "DELETE FROM actual_costs WHERE registrar_type = 'SubcontractAcceptance' AND registrar_id = ?",
@@ -803,14 +816,14 @@ def post_subcontract_acceptance(
         connection.execute(
             """INSERT INTO actual_costs
                (period, date, registrar_type, registrar_id, object_id, estimate_id,
-                work_id, cost_element_id, quantity, amount, created_at)
-               VALUES (?, ?, 'SubcontractAcceptance', ?, ?, ?, ?, ?, 0, ?, ?)""",
+                work_id, cost_element_id, quantity, amount, contract_id, created_at)
+               VALUES (?, ?, 'SubcontractAcceptance', ?, ?, ?, ?, ?, 0, ?, ?, ?)""",
             (
                 period, doc_date, doc_id,
                 doc.get("object_id"), doc.get("estimate_id"),
                 line.get("work_id"), sub_ce,
                 line.get("sum", 0),
-                _now_iso(),
+                contract_id, _now_iso(),
             ),
         )
     connection.execute(
@@ -1280,55 +1293,61 @@ def calculate_cost(
         "DELETE FROM completed_works_cost WHERE calculation_id = ?", (calc_id,)
     )
 
-    # Aggregate: actual costs + overhead per (object, work).
-    # Grouping by object_id preserves object identity for all-objects calculations
-    # (object_id == 0) so per-object reports stay correct.
+    # Aggregate: actual costs + overhead per (object, contract, work).
+    # Grouping by (object_id, contract_id, work_id) preserves identity for
+    # all-objects/all-contracts calculations so per-dimension reports stay correct.
     results = connection.execute(
         f"""SELECT
                COALESCE(object_id, 0) AS object_id,
+               COALESCE(contract_id, 0) AS contract_id,
                work_id,
                COALESCE(SUM(amount), 0) AS actual_direct,
                COALESCE(SUM(quantity), 0) AS completed_qty
             FROM actual_costs
             WHERE period = ? {obj_filter}
-            GROUP BY COALESCE(object_id, 0), work_id""",
+            GROUP BY COALESCE(object_id, 0), COALESCE(contract_id, 0), work_id""",
         (period,) + obj_params,
     ).fetchall()
 
-    # Get overhead distribution totals per (object, work)
+    # Get overhead distribution totals per (object, contract, work)
     overhead_rows = connection.execute(
-        f"""SELECT COALESCE(object_id, 0) AS object_id, work_id,
+        f"""SELECT COALESCE(object_id, 0) AS object_id,
+                   COALESCE(contract_id, 0) AS contract_id,
+                   work_id,
                    COALESCE(SUM(amount), 0) AS overhead_amount
             FROM overhead_distribution
             WHERE period = ? {obj_filter}
-            GROUP BY COALESCE(object_id, 0), work_id""",
+            GROUP BY COALESCE(object_id, 0), COALESCE(contract_id, 0), work_id""",
         (period,) + obj_params,
     ).fetchall()
     overhead_map = {
-        (row["object_id"], row["work_id"]): float(row["overhead_amount"]) for row in overhead_rows
+        (row["object_id"], row["contract_id"], row["work_id"]): float(row["overhead_amount"]) for row in overhead_rows
     }
 
-    # Get planned costs per (object, work)
+    # Get planned costs per (object, contract, work)
     planned_rows = connection.execute(
-        f"""SELECT COALESCE(object_id, 0) AS object_id, work_id,
+        f"""SELECT COALESCE(object_id, 0) AS object_id,
+                   COALESCE(contract_id, 0) AS contract_id,
+                   work_id,
                    COALESCE(SUM(planned_amount), 0) AS planned_total
             FROM planned_costs
             WHERE period = ? {obj_filter}
-            GROUP BY COALESCE(object_id, 0), work_id""",
+            GROUP BY COALESCE(object_id, 0), COALESCE(contract_id, 0), work_id""",
         (period,) + obj_params,
     ).fetchall()
     planned_map = {
-        (row["object_id"], row["work_id"]): float(row["planned_total"]) for row in planned_rows
+        (row["object_id"], row["contract_id"], row["work_id"]): float(row["planned_total"]) for row in planned_rows
     }
 
     record_count = 0
     for row in results:
         work_id = row["work_id"]
         row_obj_id = row["object_id"]
+        row_contract_id = row["contract_id"]
         actual_direct = float(row["actual_direct"])
-        overhead = overhead_map.get((row_obj_id, work_id), 0.0)
+        overhead = overhead_map.get((row_obj_id, row_contract_id, work_id), 0.0)
         actual_cost = actual_direct + overhead
-        planned_cost = planned_map.get((row_obj_id, work_id), 0.0)
+        planned_cost = planned_map.get((row_obj_id, row_contract_id, work_id), 0.0)
         completed_qty = float(row["completed_qty"])
         deviation = round(actual_cost - planned_cost, 2)
         # Contract value = planned_cost (default; can be overridden)
@@ -1337,11 +1356,11 @@ def calculate_cost(
 
         connection.execute(
             """INSERT INTO completed_works_cost
-               (period, calculation_id, object_id, work_id, completed_quantity,
+               (period, calculation_id, object_id, contract_id, work_id, completed_quantity,
                 planned_cost, actual_cost, deviation, contract_value, profit, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                period, calc_id, row_obj_id, work_id, completed_qty,
+                period, calc_id, row_obj_id, row_contract_id, work_id, completed_qty,
                 round(planned_cost, 2), round(actual_cost, 2),
                 deviation, round(contract_value, 2), profit, _now_iso(),
             ),
@@ -1648,25 +1667,55 @@ def get_deviations(
 
 
 def get_profitability(
-    connection: sqlite3.Connection, period: str | None = None
+    connection: sqlite3.Connection,
+    period: str | None = None,
+    group_by: str = "object",
 ) -> dict[str, Any]:
+    """Рентабельность по объектам или договорам.
+
+    group_by: "object" (по умолчанию) | "contract" | "object_contract"
+    """
     if not _cost_report_tables_ready(connection):
         return {"rows": []}
     period_filter = "WHERE cwc.period = ?" if period else ""
-    params = (period,) if period else ()
+    params: list[Any] = [period] if period else []
+
+    if group_by == "contract":
+        select_cols = """cwc.contract_id,
+                         ct.number AS contract_number,
+                         COALESCE(ct.counterparty_id, 0) AS counterparty_id,
+                         cp.name AS counterparty_name"""
+        group_cols = "cwc.contract_id, ct.number, ct.counterparty_id, cp.name"
+        join_clause = """LEFT JOIN contracts ct ON ct.id = cwc.contract_id
+                         LEFT JOIN counterparties cp ON cp.id = ct.counterparty_id"""
+    elif group_by == "object_contract":
+        select_cols = """cwc.object_id,
+                         o.name AS object_name,
+                         cwc.contract_id,
+                         ct.number AS contract_number"""
+        group_cols = "cwc.object_id, o.name, cwc.contract_id, ct.number"
+        join_clause = """LEFT JOIN objects o ON o.id = cwc.object_id
+                         LEFT JOIN contracts ct ON ct.id = cwc.contract_id"""
+    else:
+        select_cols = """cwc.object_id,
+                         o.name AS object_name,
+                         COALESCE(cwc.contract_id, 0) AS contract_id,
+                         ct.number AS contract_number"""
+        group_cols = "cwc.object_id, o.name, cwc.contract_id, ct.number"
+        join_clause = """LEFT JOIN objects o ON o.id = cwc.object_id
+                         LEFT JOIN contracts ct ON ct.id = cwc.contract_id"""
 
     rows = connection.execute(
         f"""SELECT
-               cwc.object_id,
-               o.name AS object_name,
+               {select_cols},
                COALESCE(SUM(cwc.planned_cost), 0) AS planned_cost,
                COALESCE(SUM(cwc.actual_cost), 0) AS actual_cost,
                COALESCE(SUM(cwc.contract_value), 0) AS contract_value,
                COALESCE(SUM(cwc.profit), 0) AS profit
             FROM completed_works_cost cwc
-            LEFT JOIN objects o ON o.id = cwc.object_id
+            {join_clause}
             {period_filter}
-            GROUP BY cwc.object_id
+            GROUP BY {group_cols}
             ORDER BY profit DESC""",
         params,
     ).fetchall()
@@ -1675,14 +1724,314 @@ def get_profitability(
     for row in rows:
         actual = float(row["actual_cost"])
         profit = float(row["profit"])
-        result_rows.append({
-            "object_id": row["object_id"],
-            "object_name": row["object_name"],
+        entry: dict[str, Any] = {
             "planned_cost": round(float(row["planned_cost"]), 2),
             "actual_cost": round(actual, 2),
             "contract_value": round(float(row["contract_value"]), 2),
             "profit": round(profit, 2),
             "profitability_pct": round((profit / actual * 100) if actual else 0.0, 1),
-        })
+        }
+        if group_by == "contract":
+            entry["contract_id"] = row["contract_id"]
+            entry["contract_number"] = row["contract_number"]
+            entry["counterparty_name"] = row["counterparty_name"]
+        elif group_by == "object_contract":
+            entry["object_id"] = row["object_id"]
+            entry["object_name"] = row["object_name"]
+            entry["contract_id"] = row["contract_id"]
+            entry["contract_number"] = row["contract_number"]
+        else:
+            entry["object_id"] = row["object_id"]
+            entry["object_name"] = row["object_name"]
+            entry["contract_id"] = row["contract_id"]
+            entry["contract_number"] = row["contract_number"]
+        result_rows.append(entry)
 
-    return {"period": period, "rows": result_rows}
+    return {"period": period, "group_by": group_by, "rows": result_rows}
+
+
+# ── Drilldown (COST_DRILLDOWN_SPEC.md) ────────────────────────────────────
+
+
+def _drilldown_normalize_page(page: int, page_size: int) -> tuple[int, int]:
+    page = max(1, page)
+    page_size = max(1, min(500, page_size))
+    return page, page_size
+
+
+def get_actual_costs_drilldown(
+    connection: sqlite3.Connection,
+    *,
+    period_from: str | None = None,
+    period_to: str | None = None,
+    period_before: str | None = None,
+    object_id: int | None = None,
+    cost_element_id: int | None = None,
+    work_id: int | None = None,
+    estimate_id: int | None = None,
+    contract_id: int | None = None,
+    amount_sign: str | None = None,
+    registrar_type: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, float]]:
+    """L1 drilldown: возвращает строки actual_costs с JOIN к справочникам
+    и номерами документов-регистраторов (COST_DRILLDOWN_SPEC.md §5.1)."""
+    if not _cost_report_tables_ready(connection):
+        return [], {"page": 1, "pages": 1, "total": 0}, {"quantity": 0.0, "amount": 0.0}
+
+    page, page_size = _drilldown_normalize_page(page, page_size)
+
+    where_parts: list[str] = []
+    params: list[Any] = []
+
+    if period_before:
+        where_parts.append("ac.period < ?")
+        params.append(period_before)
+    else:
+        if period_from:
+            where_parts.append("ac.period >= ?")
+            params.append(period_from)
+        if period_to:
+            where_parts.append("ac.period <= ?")
+            params.append(period_to)
+
+    if object_id:
+        where_parts.append("ac.object_id = ?")
+        params.append(object_id)
+    if cost_element_id:
+        where_parts.append("ac.cost_element_id = ?")
+        params.append(cost_element_id)
+    if work_id is not None and work_id > 0:
+        where_parts.append("ac.work_id = ?")
+        params.append(work_id)
+    if estimate_id:
+        where_parts.append("ac.estimate_id = ?")
+        params.append(estimate_id)
+    if contract_id:
+        where_parts.append("ac.contract_id = ?")
+        params.append(contract_id)
+    if registrar_type:
+        where_parts.append("ac.registrar_type = ?")
+        params.append(registrar_type)
+    if amount_sign == "positive":
+        where_parts.append("ac.amount > 0")
+    elif amount_sign == "negative":
+        where_parts.append("ac.amount < 0")
+
+    where_clause = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+    # Totals
+    totals_row = connection.execute(
+        f"SELECT COALESCE(SUM(quantity), 0) AS qty, COALESCE(SUM(amount), 0) AS amt "
+        f"FROM actual_costs ac{where_clause}",
+        params,
+    ).fetchone()
+    total_qty = float(totals_row["qty"] or 0)
+    total_amt = float(totals_row["amt"] or 0)
+
+    count_row = connection.execute(
+        f"SELECT COUNT(*) AS cnt FROM actual_costs ac{where_clause}", params
+    ).fetchone()
+    total_rows = int(count_row["cnt"] or 0)
+    pages = max(1, (total_rows + page_size - 1) // page_size)
+    offset = (page - 1) * page_size
+
+    rows = connection.execute(
+        f"""SELECT
+               ac.id, ac.period, ac.date, ac.registrar_type, ac.registrar_id,
+               ac.object_id, ac.estimate_id, ac.work_id, ac.cost_element_id,
+               ac.quantity, ac.amount,
+               o.name AS object_name,
+               w.name AS work_name,
+               ce.name AS cost_element_name,
+               CASE ac.registrar_type
+                   WHEN 'MaterialConsumption' THEN mc.number
+                   WHEN 'MachineryUsageReport' THEN mu.number
+                   WHEN 'SubcontractAcceptance' THEN sa.number
+                   WHEN 'Timesheet' THEN ts.number
+                   WHEN 'DailyReport' THEN dr.number
+               END AS registrar_number
+           FROM actual_costs ac
+           LEFT JOIN objects o ON o.id = ac.object_id
+           LEFT JOIN works w ON w.id = ac.work_id
+           LEFT JOIN cost_elements ce ON ce.id = ac.cost_element_id
+           LEFT JOIN material_consumptions mc
+               ON ac.registrar_type = 'MaterialConsumption' AND mc.id = ac.registrar_id
+           LEFT JOIN machinery_usage_reports mu
+               ON ac.registrar_type = 'MachineryUsageReport' AND mu.id = ac.registrar_id
+           LEFT JOIN subcontract_acceptances sa
+               ON ac.registrar_type = 'SubcontractAcceptance' AND sa.id = ac.registrar_id
+           LEFT JOIN timesheets ts
+               ON ac.registrar_type = 'Timesheet' AND ts.id = ac.registrar_id
+           LEFT JOIN daily_reports dr
+               ON ac.registrar_type = 'DailyReport' AND dr.id = ac.registrar_id
+           {where_clause}
+           ORDER BY ac.period DESC, ac.id DESC
+           LIMIT ? OFFSET ?""",
+        params + [page_size, offset],
+    ).fetchall()
+
+    items = [dict(row) for row in rows]
+    pagination = {"page": page, "pages": pages, "total": total_rows, "page_size": page_size}
+    totals = {"quantity": total_qty, "amount": total_amt}
+    return items, pagination, totals
+
+
+def get_planned_costs_drilldown(
+    connection: sqlite3.Connection,
+    *,
+    period_from: str | None = None,
+    period_to: str | None = None,
+    object_id: int | None = None,
+    cost_element_id: int | None = None,
+    work_id: int | None = None,
+    estimate_id: int | None = None,
+    contract_id: int | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, float]]:
+    """L1 drilldown для плановых затрат (COST_DRILLDOWN_SPEC.md §5.2)."""
+    if not _cost_report_tables_ready(connection):
+        return [], {"page": 1, "pages": 1, "total": 0}, {"quantity": 0.0, "amount": 0.0}
+
+    page, page_size = _drilldown_normalize_page(page, page_size)
+
+    where_parts: list[str] = []
+    params: list[Any] = []
+
+    if period_from:
+        where_parts.append("pc.period >= ?")
+        params.append(period_from)
+    if period_to:
+        where_parts.append("pc.period <= ?")
+        params.append(period_to)
+    if object_id:
+        where_parts.append("pc.object_id = ?")
+        params.append(object_id)
+    if cost_element_id:
+        where_parts.append("pc.cost_element_id = ?")
+        params.append(cost_element_id)
+    if work_id is not None and work_id > 0:
+        where_parts.append("pc.work_id = ?")
+        params.append(work_id)
+    if estimate_id:
+        where_parts.append("pc.estimate_id = ?")
+        params.append(estimate_id)
+    if contract_id:
+        where_parts.append("pc.contract_id = ?")
+        params.append(contract_id)
+
+    where_clause = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+    totals_row = connection.execute(
+        f"SELECT COALESCE(SUM(planned_quantity), 0) AS qty, COALESCE(SUM(planned_amount), 0) AS amt "
+        f"FROM planned_costs pc{where_clause}",
+        params,
+    ).fetchone()
+    total_qty = float(totals_row["qty"] or 0)
+    total_amt = float(totals_row["amt"] or 0)
+
+    count_row = connection.execute(
+        f"SELECT COUNT(*) AS cnt FROM planned_costs pc{where_clause}", params
+    ).fetchone()
+    total_rows = int(count_row["cnt"] or 0)
+    pages = max(1, (total_rows + page_size - 1) // page_size)
+    offset = (page - 1) * page_size
+
+    rows = connection.execute(
+        f"""SELECT
+               pc.id, pc.period, pc.estimate_id, pc.object_id, pc.work_id,
+               pc.cost_element_id, pc.planned_quantity AS quantity,
+               pc.planned_amount AS amount,
+               o.name AS object_name,
+               w.name AS work_name,
+               ce.name AS cost_element_name,
+               'Estimate' AS registrar_type,
+               pc.estimate_id AS registrar_id,
+               e.number AS registrar_number
+           FROM planned_costs pc
+           LEFT JOIN objects o ON o.id = pc.object_id
+           LEFT JOIN works w ON w.id = pc.work_id
+           LEFT JOIN cost_elements ce ON ce.id = pc.cost_element_id
+           LEFT JOIN estimates e ON e.id = pc.estimate_id
+           {where_clause}
+           ORDER BY pc.period DESC, pc.id DESC
+           LIMIT ? OFFSET ?""",
+        params + [page_size, offset],
+    ).fetchall()
+
+    items = [dict(row) for row in rows]
+    pagination = {"page": page, "pages": pages, "total": total_rows, "page_size": page_size}
+    totals = {"quantity": total_qty, "amount": total_amt}
+    return items, pagination, totals
+
+
+def get_overhead_drilldown(
+    connection: sqlite3.Connection,
+    *,
+    period_from: str | None = None,
+    period_to: str | None = None,
+    object_id: int | None = None,
+    work_id: int | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, float]]:
+    """L1 drilldown для распределённых накладных расходов (§5.3)."""
+    if not _cost_report_tables_ready(connection):
+        return [], {"page": 1, "pages": 1, "total": 0}, {"quantity": 0.0, "amount": 0.0}
+
+    page, page_size = _drilldown_normalize_page(page, page_size)
+
+    where_parts: list[str] = []
+    params: list[Any] = []
+
+    if period_from:
+        where_parts.append("od.period >= ?")
+        params.append(period_from)
+    if period_to:
+        where_parts.append("od.period <= ?")
+        params.append(period_to)
+    if object_id:
+        where_parts.append("od.object_id = ?")
+        params.append(object_id)
+    if work_id is not None and work_id > 0:
+        where_parts.append("od.work_id = ?")
+        params.append(work_id)
+
+    where_clause = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+    totals_row = connection.execute(
+        f"SELECT COALESCE(SUM(amount), 0) AS amt FROM overhead_distribution od{where_clause}",
+        params,
+    ).fetchone()
+    total_amt = float(totals_row["amt"] or 0)
+
+    count_row = connection.execute(
+        f"SELECT COUNT(*) AS cnt FROM overhead_distribution od{where_clause}", params
+    ).fetchone()
+    total_rows = int(count_row["cnt"] or 0)
+    pages = max(1, (total_rows + page_size - 1) // page_size)
+    offset = (page - 1) * page_size
+
+    rows = connection.execute(
+        f"""SELECT
+               od.id, od.period, od.object_id, od.estimate_id, od.work_id,
+               od.amount, od.allocation_base_id, od.base_value,
+               o.name AS object_name,
+               w.name AS work_name,
+               ab.name AS allocation_base_name
+           FROM overhead_distribution od
+           LEFT JOIN objects o ON o.id = od.object_id
+           LEFT JOIN works w ON w.id = od.work_id
+           LEFT JOIN allocation_bases ab ON ab.id = od.allocation_base_id
+           {where_clause}
+           ORDER BY od.period DESC, od.id DESC
+           LIMIT ? OFFSET ?""",
+        params + [page_size, offset],
+    ).fetchall()
+
+    items = [dict(row) for row in rows]
+    pagination = {"page": page, "pages": pages, "total": total_rows, "page_size": page_size}
+    totals = {"quantity": 0.0, "amount": total_amt}
+    return items, pagination, totals

@@ -287,12 +287,24 @@ async function save() {
 
 async function post() {
   if (!form.id) return
+  loading.value = true
+  error.value = ''
+  saved.value = false
   try {
+    // 1С-поведение: перед проведением записать форму, иначе несохранённые правки теряются
+    const payload = buildPayload()
+    const res = await updatePaymentSchedule(form.id, payload)
+    form.id = res.data.id
+    form.number = res.data.number
+    isPosted.value = res.data.is_posted
+    saved.value = true
     await postPaymentSchedule(form.id)
     isPosted.value = true
     await loadSchedule(form.id)
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Ошибка проведения'
+  } finally {
+    loading.value = false
   }
 }
 

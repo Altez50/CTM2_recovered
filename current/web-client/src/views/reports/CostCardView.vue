@@ -37,8 +37,8 @@
 
           <h3 style="margin-top: 1.5rem">По элементам затрат</h3>
           <DataTable :columns="elementCols" :rows="data.elements as any[]" :loading="loading" empty-text="Нет данных">
-            <template #cell-planned_amount="{ row }">{{ fmt(row.planned_amount) }}</template>
-            <template #cell-actual_amount="{ row }">{{ fmt(row.actual_amount) }}</template>
+            <template #cell-planned_amount="{ row }"><span class="drilldown-cell" @click="openDrilldown('planned', `План: ${row.cost_element_name}`, { period_from: periodFrom || undefined, period_to: periodTo || undefined, object_id: objectId ?? undefined, cost_element_id: row.cost_element_id })">{{ fmt(row.planned_amount) }}</span></template>
+            <template #cell-actual_amount="{ row }"><span class="drilldown-cell" @click="openDrilldown('actual', `Факт: ${row.cost_element_name}`, { period_from: periodFrom || undefined, period_to: periodTo || undefined, object_id: objectId ?? undefined, cost_element_id: row.cost_element_id })">{{ fmt(row.actual_amount) }}</span></template>
             <template #cell-deviation="{ row }"><span :class="{ negative: row.deviation > 0, positive: row.deviation < 0 }">{{ fmt(row.deviation) }}</span></template>
           </DataTable>
 
@@ -46,7 +46,7 @@
           <DataTable :columns="workCols" :rows="data.works as any[]" :loading="loading" empty-text="Нет данных" v-if="data.works.length">
             <template #cell-completed_quantity="{ row }">{{ fmt(row.completed_quantity) }}</template>
             <template #cell-planned_cost="{ row }">{{ fmt(row.planned_cost) }}</template>
-            <template #cell-actual_cost="{ row }">{{ fmt(row.actual_cost) }}</template>
+            <template #cell-actual_cost="{ row }"><span class="drilldown-cell" @click="openDrilldown('actual', `Факт по работе: ${row.work_name || '—'}`, { period_from: periodFrom || undefined, period_to: periodTo || undefined, object_id: objectId ?? undefined, work_id: row.work_id })">{{ fmt(row.actual_cost) }}</span></template>
             <template #cell-deviation="{ row }"><span :class="{ negative: row.deviation > 0, positive: row.deviation < 0 }">{{ fmt(row.deviation) }}</span></template>
             <template #cell-contract_value="{ row }">{{ fmt(row.contract_value) }}</template>
             <template #cell-profit="{ row }"><span :class="{ positive: row.profit > 0, negative: row.profit < 0 }">{{ fmt(row.profit) }}</span></template>
@@ -55,17 +55,25 @@
         </div>
       </div>
     </section>
+    <CostDrilldownDialog
+      :open="drilldown.open"
+      :title="drilldown.title"
+      :register="drilldown.register"
+      :filters="drilldown.filters"
+      @close="drilldown.open = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import DataTable from '../../components/common/DataTable.vue'
+import CostDrilldownDialog from '../../components/reports/CostDrilldownDialog.vue'
 import EntityPicker from '../../components/common/EntityPicker.vue'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import { getCostCard } from '../../api/costAccounting'
 import { listReferences } from '../../api/references'
-import type { CostCardResponse } from '../../types/costAccounting'
+import type { CostCardResponse, DrilldownQuery } from '../../types/costAccounting'
 import type { ObjectRecord } from '../../types/models'
 
 const props = defineProps<{ tabId?: string }>()
@@ -78,6 +86,20 @@ const objectId = ref<number | null>(null)
 const objectName = ref<string | null>(null)
 const periodFrom = ref('')
 const periodTo = ref('')
+
+const drilldown = reactive({
+  open: false,
+  title: '',
+  register: 'actual' as 'actual' | 'planned' | 'overhead',
+  filters: {} as DrilldownQuery,
+})
+
+function openDrilldown(register: 'actual' | 'planned' | 'overhead', title: string, filters: DrilldownQuery) {
+  drilldown.register = register
+  drilldown.title = title
+  drilldown.filters = filters
+  drilldown.open = true
+}
 
 const elementCols = [{ key: 'cost_element_name', label: 'Элемент' }, { key: 'planned_amount', label: 'План' }, { key: 'actual_amount', label: 'Факт' }, { key: 'deviation', label: 'Отклонение' }]
 const workCols = [{ key: 'work_name', label: 'Работа' }, { key: 'completed_quantity', label: 'Объём' }, { key: 'planned_cost', label: 'План' }, { key: 'actual_cost', label: 'Факт' }, { key: 'deviation', label: 'Отклонение' }, { key: 'contract_value', label: 'Выручка' }, { key: 'profit', label: 'Прибыль' }, { key: 'profitability_pct', label: 'Рент.%' }]
@@ -112,6 +134,7 @@ async function loadData() {
 </script>
 
 <style scoped>
+.drilldown-cell { cursor: pointer; text-decoration: underline dotted; }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; }
 .summary-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
 .summary-label { font-size: 0.78rem; color: var(--text-soft); margin-bottom: 0.3rem; }

@@ -246,8 +246,11 @@ export interface DeviationsReportResponse {
 }
 
 export interface ProfitabilityRow {
-  object_id: number
-  object_name: string | null
+  object_id?: number
+  object_name?: string | null
+  contract_id?: number | null
+  contract_number?: string | null
+  counterparty_name?: string | null
   planned_cost: number
   actual_cost: number
   contract_value: number
@@ -256,7 +259,8 @@ export interface ProfitabilityRow {
 }
 
 export interface ProfitabilityReportResponse {
-  period: string | null
+  period?: string | null
+  group_by?: string
   rows: ProfitabilityRow[]
 }
 
@@ -274,4 +278,46 @@ export interface LimitCheckResponse {
   actual_quantity: number
   limit_exceeded: boolean
   exceed_pct: number
+}
+
+// ── Drilldown (COST_DRILLDOWN_SPEC.md §6.5) ───────────────────────────────
+
+export interface DrilldownQuery {
+  period_from?: string
+  period_to?: string
+  period_before?: string
+  object_id?: number
+  cost_element_id?: number
+  work_id?: number
+  estimate_id?: number
+  contract_id?: number
+  amount_sign?: 'positive' | 'negative'
+  registrar_type?: string
+  page?: number
+  page_size?: number
+}
+
+export interface DrilldownItem {
+  id: number
+  period: string
+  date?: string
+  registrar_type?: string
+  registrar_id?: number
+  registrar_number?: string | null
+  object_id?: number | null
+  object_name?: string | null
+  work_id?: number | null
+  work_name?: string | null
+  cost_element_id?: number
+  cost_element_name?: string
+  quantity: number
+  amount: number
+  allocation_base_id?: number | null
+  allocation_base_name?: string | null
+  base_value?: number | null
+}
+
+export interface DrilldownResponse {
+  items: DrilldownItem[]
+  totals: { quantity: number; amount: number }
 }

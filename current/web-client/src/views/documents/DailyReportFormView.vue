@@ -146,9 +146,15 @@
                   <span v-if="!line.is_group">{{ formatNumber(line.actual_sum) }}</span>
                 </td>
                 <td>
-                  <select v-model="line.executor_ids" class="select dense-input" multiple>
-                    <option v-for="person in persons" :key="person.id" :value="person.id">{{ person.full_name }}</option>
-                  </select>
+                  <ExecutorPicker
+                    :model-value="line.executor_ids"
+                    :selected-labels="line.executor_names ?? []"
+                    :compact="isCompactMode"
+                    :load-page="loadPersonPage"
+                    edit-kind="persons"
+                    @update:model-value="(value) => { line.executor_ids = value }"
+                    @change="(items) => handleExecutorsChange(line, items)"
+                  />
                 </td>
                 <td>
                   <button class="button button-danger compact-button" type="button" @click="removeLine(line.line_number)">×</button>
@@ -169,6 +175,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityPicker, { type PickerItem } from '../../components/common/EntityPicker.vue'
+import ExecutorPicker from '../../components/common/ExecutorPicker.vue'
 import FormField from '../../components/common/FormField.vue'
 import WorkPicker from '../../components/common/WorkPicker.vue'
 import DocumentDataExchangeDialog from '../../components/documents/DocumentDataExchangeDialog.vue'
@@ -185,7 +192,6 @@ const props = defineProps<{ id?: string; tabId?: string }>()
 const router = useRouter()
 const auth = useAuthStore()
 
-const persons = ref<PersonRecord[]>([])
 const { isCompactMode } = useDocumentDensity()
 const { hasBasedOn, loadSource } = useBasedOnPrefill()
 const saving = ref(false)
@@ -303,6 +309,12 @@ function handleWorkChange(line: DailyReportLine, work: { name: string; unit?: st
   line.work_name = work?.name ?? null
   // auto-fill unit from the selected work (DailyReportLine has a `unit` field)
   line.unit = work?.unit ?? ''
+}
+
+function handleExecutorsChange(line: DailyReportLine, items: { id: number; label: string }[]) {
+  // Сохраняем подписи для отображения в ячейке (порядок соответствует executor_ids).
+  line.executor_ids = items.map((item) => item.id)
+  line.executor_names = items.map((item) => item.label)
 }
 
 function removeLine(lineNumber: number) {
@@ -454,6 +466,16 @@ async function postDocument() {
   saving.value = true
   error.value = ''
   try {
+    // 1С-поведение: перед проведением записать форму, иначе несохранённые правки теряются
+    const payload: DailyReport = {
+      ...form.value,
+      lines: form.value.lines.map((line, index) => ({
+        ...line,
+        line_number: index + 1,
+        actual_labor: Number(line.quantity) || 0,
+      })),
+    }
+    await updateDailyReport(Number(props.id), payload)
     await postDailyReport(Number(props.id))
     await loadDocument()
   } catch (err) {
@@ -499,12 +521,6 @@ onMounted(async () => {
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Ошибка загрузки отчёта'
-  }
-  try {
-    const personsResult = await listReferences('persons', { page_size: 50 })
-    persons.value = personsResult.data as PersonRecord[]
-  } catch {
-    // Не критично: селектор исполнителей будет пуст.
   }
 })
 </script>

@@ -54,7 +54,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useWorkspaceStore, type WorkspaceTab } from '../../stores/workspace'
 
 defineProps<{
@@ -153,6 +153,28 @@ watch(
   },
 )
 
+// Горизонтальная прокрутка колесом мыши при переполнении табов.
+// Вертикальное колесо транслируется в горизонталь — как в браузерах/IDE.
+function onWheel(event: WheelEvent) {
+  const container = scrollerRef.value
+  if (!container) return
+  // Прокручиваем только когда есть реальное переполнение.
+  if (container.scrollWidth <= container.clientWidth) return
+  event.preventDefault()
+  container.scrollLeft += event.deltaY
+}
+
+onMounted(() => {
+  scrollerRef.value?.addEventListener('wheel', onWheel, { passive: false })
+})
+
+onBeforeUnmount(() => {
+  scrollerRef.value?.removeEventListener('wheel', onWheel)
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('click', onDocumentClick)
+  }
+})
+
 // Закрытие меню по клику вне.
 function onDocumentClick(event: MouseEvent) {
   if (!menuOpen.value) return
@@ -165,12 +187,6 @@ function onDocumentClick(event: MouseEvent) {
 if (typeof document !== 'undefined') {
   document.addEventListener('click', onDocumentClick)
 }
-
-onBeforeUnmount(() => {
-  if (typeof document !== 'undefined') {
-    document.removeEventListener('click', onDocumentClick)
-  }
-})
 
 // Экспонируем для потенциальных тестов.
 defineExpose({ workspace })
@@ -211,6 +227,8 @@ defineExpose({ workspace })
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  flex: 0 1 auto; /* Табы сжимаются, прежде чем включится скролл */
+  min-width: 6.5rem; /* Порог сжатия перед горизонтальной прокруткой */
   max-width: 16rem;
   padding: 0.5rem 0.85rem;
   border: 1px solid transparent;
@@ -284,6 +302,7 @@ defineExpose({ workspace })
   font-size: 0.88rem;
   border-radius: 11px;
   max-width: 13rem;
+  min-width: 5.5rem;
 }
 
 .workspace-tabs.compact .tab-close {
@@ -312,7 +331,7 @@ defineExpose({ workspace })
   position: absolute;
   top: calc(100% + 0.4rem);
   right: 0;
-  z-index: 60;
+  z-index: 200;
   min-width: 13rem;
   padding: 0.35rem;
   display: grid;

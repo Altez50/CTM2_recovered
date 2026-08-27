@@ -137,7 +137,17 @@ async function save() {
   } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка сохранения' }
 }
 
-async function post() { try { await postMaterialConsumption(form.value.id!); form.value.is_posted = true } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка проведения' } }
+async function post() {
+  error.value = ''
+  try {
+    // 1С-поведение: перед проведением записать форму, иначе несохранённые правки теряются
+    const payload = { ...form.value, lines: form.value.lines.map((l, i) => ({ ...l, line_number: i + 1, sum: +(l.actual_quantity * l.price).toFixed(2) })) }
+    const r = await updateMaterialConsumption(form.value.id!, payload)
+    form.value = r.data
+    await postMaterialConsumption(form.value.id!)
+    form.value.is_posted = true
+  } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка проведения' }
+}
 async function unpost() { try { await unpostMaterialConsumption(form.value.id!); form.value.is_posted = false } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка отмены' } }
 
 onMounted(async () => {

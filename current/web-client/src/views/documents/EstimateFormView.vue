@@ -663,6 +663,15 @@ async function postDocument() {
   saving.value = true
   error.value = ''
   try {
+    // 1С-поведение: перед проведением записать форму, иначе несохранённые правки теряются
+    const payload: Estimate = {
+      ...form.value,
+      lines: form.value.lines.map((line, index) => ({
+        ...line,
+        line_number: index + 1,
+      })),
+    }
+    await updateEstimate(Number(props.id), payload)
     await postEstimate(Number(props.id))
     await loadDocument()
   } catch (err) {

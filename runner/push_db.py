@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Push the local SQLite DB to prod via paramiko (password auth to LAN IP).
+"""Push the local SQLite DB to prod via paramiko (key auth, see prod_ssh.py).
 
 Pipeline:
   1. Stop api container (frees the SQLite file handle).
@@ -17,15 +17,7 @@ import os
 import sys
 import time
 
-# --- connection (LAN — verified working 2026-08-01) ------------------------
-# PASS is only a fallback for callers without a console (e.g. the GUI runner,
-# runner.py, spawns this with no console to type into). The standalone wrapper
-# (push-db-prod.ps1) prompts for the kassir password and passes it via
-# CTM_KASSIR_PASS, which takes priority.
-HOST = "192.168.0.39"
-USER = "kassir"
-PASS = "7535789"
-PORT = 22
+import prod_ssh
 
 REMOTE_DB = "/srv/ctm/data/construction-ctm2.db"
 COMPOSE_DIR = "/srv/ctm/deploy"
@@ -74,16 +66,15 @@ def main():
 
     size_kb = os.path.getsize(local_db) / 1024
     log(f"Local : {local_db}  ({size_kb:.0f} KB)")
-    log(f"Prod  : {USER}@{HOST}:{REMOTE_DB}")
+    log(f"Prod  : {prod_ssh.USER}@{prod_ssh.HOST}:{REMOTE_DB}")
     log("")
 
-    # 1. Connect
-    passw = os.environ.get("CTM_KASSIR_PASS") or PASS
-    log(f">>> Connecting to {USER}@{HOST}:{PORT} ...")
+    # 1. Connect (dedicated key first, password fallback — see prod_ssh.py)
+    log(f">>> Connecting to {prod_ssh.USER}@{prod_ssh.HOST}:{prod_ssh.PORT} ...")
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(HOST, port=PORT, username=USER, password=passw, timeout=15)
-    log("[OK] Connected")
+    auth = prod_ssh.connect(ssh)
+    log(f"[OK] Connected ({auth})")
 
     # 2. Stop api container (frees the SQLite file handle)
     log("")

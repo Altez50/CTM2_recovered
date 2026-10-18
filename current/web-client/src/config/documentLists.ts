@@ -3,7 +3,7 @@
  * Каждый вид описывается одним DocListConfig; поведение списка едино и управляется
  * useDocumentList. Здесь — только данные: колонки, API, маршруты, «Ввод на основании».
  */
-import type { DocListConfig, DocListColumn } from './documentListTypes'
+import type { DocListConfig, DocListColumn, DocListRow } from './documentListTypes'
 import * as docs from '../api/documents'
 import * as cost from '../api/costAccounting'
 import * as goodsApi from '../api/goods'
@@ -14,6 +14,23 @@ const postedFilterOptions = [
   { value: '1', label: 'Проведён' },
   { value: '0', label: 'Черновик' },
 ]
+
+type RoleUser = { role?: string; person_id?: number | null } | null
+
+function canManageCostOffice(user: RoleUser): boolean {
+  return user?.role === 'admin' || user?.role === 'manager'
+}
+
+function canPrepareFieldCost(user: RoleUser): boolean {
+  return canManageCostOffice(user) || user?.role === 'foreman'
+}
+
+function canDeleteFieldCost(user: RoleUser, row: DocListRow): boolean {
+  if (canManageCostOffice(user)) return true
+  return user?.role === 'foreman'
+    && !!user.person_id
+    && Number(row.foreman_id) === user.person_id
+}
 
 function baseColumns(extra: DocListColumn[]): DocListColumn[] {
   return [
@@ -55,10 +72,10 @@ export const estimateListConfig: DocListConfig = {
   labels: { one: 'смету', few: 'сметы', many: 'смет' },
 }
 
-// ── 2. Ежедневные отчёты ────────────────────────────────────────────────
+// ── 2. Отчёты прораба ───────────────────────────────────────────────────
 export const dailyReportListConfig: DocListConfig = {
   formName: 'daily-reports',
-  title: 'Ежедневные отчёты',
+  title: 'Отчёты прораба',
   createLabel: 'Создать отчёт',
   createRoute: '/documents/daily-reports/new',
   itemRoute: (id) => `/documents/daily-reports/${id}`,
@@ -119,6 +136,9 @@ export const materialConsumptionListConfig: DocListConfig = {
   createRoute: '/documents/material-consumptions/new',
   itemRoute: (id) => `/documents/material-consumptions/${id}`,
   defaultSort: { key: 'date', order: 'desc' },
+  canCreate: canPrepareFieldCost,
+  canManagePosting: canManageCostOffice,
+  canDelete: canDeleteFieldCost,
   api: {
     list: (p) => cost.listMaterialConsumptions(p),
     post: cost.postMaterialConsumption,
@@ -143,6 +163,9 @@ export const machineryUsageListConfig: DocListConfig = {
   createRoute: '/documents/machinery-usage/new',
   itemRoute: (id) => `/documents/machinery-usage/${id}`,
   defaultSort: { key: 'date', order: 'desc' },
+  canCreate: canPrepareFieldCost,
+  canManagePosting: canManageCostOffice,
+  canDelete: canDeleteFieldCost,
   api: {
     list: (p) => cost.listMachineryUsageReports(p),
     post: cost.postMachineryUsageReport,
@@ -166,6 +189,9 @@ export const subcontractAcceptanceListConfig: DocListConfig = {
   createRoute: '/documents/subcontract-acceptances/new',
   itemRoute: (id) => `/documents/subcontract-acceptances/${id}`,
   defaultSort: { key: 'date', order: 'desc' },
+  canCreate: canManageCostOffice,
+  canManagePosting: canManageCostOffice,
+  canDelete: (user) => canManageCostOffice(user),
   api: {
     list: (p) => cost.listSubcontractAcceptances(p),
     post: cost.postSubcontractAcceptance,
@@ -190,6 +216,8 @@ export const overheadExpenseListConfig: DocListConfig = {
   itemRoute: (id) => `/documents/overhead-expenses/${id}`,
   defaultSort: { key: 'period', order: 'desc' },
   hasPost: false, // статус — is_distributed; проведение отсутствует
+  canCreate: canManageCostOffice,
+  canDelete: (user) => canManageCostOffice(user),
   api: {
     list: (p) => cost.listOverheadExpenses(p),
     remove: cost.deleteOverheadExpense,
@@ -210,6 +238,9 @@ export const costCalculationListConfig: DocListConfig = {
   createRoute: '/documents/cost-calculations/new',
   itemRoute: (id) => `/documents/cost-calculations/${id}`,
   defaultSort: { key: 'period', order: 'desc' },
+  canCreate: canManageCostOffice,
+  canManagePosting: canManageCostOffice,
+  canDelete: (user) => canManageCostOffice(user),
   statusField: 'status',
   postableWhen: (row) => row.status === 'calculated',
   postedWhen: (row) => row.status === 'posted',
@@ -219,6 +250,7 @@ export const costCalculationListConfig: DocListConfig = {
     post: cost.postCostCalculation,
     unpost: cost.unpostCostCalculation,
     remove: cost.deleteCostCalculation,
+    restore: cost.restoreCostCalculation,
   },
   columns: baseColumns([
     { key: 'period', label: 'Период', sortable: true, filterable: true, filter: { type: 'month' } },
@@ -248,6 +280,7 @@ export function goodsDocumentListConfig(kind: 'receipt' | 'issue'): DocListConfi
     },
     columns: baseColumns([
       { key: 'organization_name', label: 'Организация' },
+      { key: 'warehouse_name', label: 'Склад', filterable: true, filter: { type: 'text' } },
       { key: 'counterparty_name', label: isReceipt ? 'Поставщик' : 'Покупатель', filterable: true, filter: { type: 'text' } },
       { key: 'contract_number', label: 'Договор', filterable: true, filter: { type: 'text' } },
       { key: 'object_name', label: 'Объект', filterable: true, filter: { type: 'text' } },

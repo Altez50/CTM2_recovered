@@ -137,7 +137,7 @@ const sections = [
 
 // Инженерный раздел видим только администраторам.
 const visibleSections = computed(() =>
-  auth.isAdmin ? sections : sections.filter((s) => s.id !== 'engineering'),
+  auth.canManageAccess ? sections : sections.filter((s) => s.id !== 'engineering'),
 )
 
 // -- All navigation items ---------------------------------------------------
@@ -153,7 +153,7 @@ const items: NavItem[] = [
     icon: '▦', section: 'documents',
   },
   {
-    id: 'daily-report-list', to: '/documents/daily-reports', label: 'Ежедневные отчёты', shortLabel: 'ЕО',
+    id: 'daily-report-list', to: '/documents/daily-reports', label: 'Отчёты прораба', shortLabel: 'ОП',
     description: 'Фактические трудозатраты',
     icon: '◷', section: 'documents',
   },
@@ -212,7 +212,28 @@ const items: NavItem[] = [
     icon: '□', section: 'documents',
     initiallyCollapsed: true,
   },
+  {
+    id: 'goods-price-adjustment-list', to: '/goods/price-adjustments', label: 'Корректировки цен', shortLabel: 'КЦ',
+    description: 'Изменение цен продажи и закупки', icon: '±', section: 'documents', initiallyCollapsed: true,
+  },
+  { id: 'purchase-list', to: '/purchases/orders', label: 'Закупки', shortLabel: 'Зк', description: 'Заказы, приемка, приобретения и расхождения', icon: '▣', section: 'documents' },
+  { id: 'sale-list', to: '/sales/orders', label: 'Продажи', shortLabel: 'Пр', description: 'Заказы, резервирование, реализация и отгрузка', icon: '▣', section: 'documents' },
+  {
+    id: 'goods-return-list', to: '/goods/returns', label: 'Возвраты товаров', shortLabel: 'ВТ',
+    description: 'Возвраты клиентов и поставщикам, возврат денег', icon: '↩', section: 'documents',
+    initiallyCollapsed: true,
+  },
+  {
+    id: 'goods-transfer-list', to: '/goods/transfers', label: 'Перемещения ТМЦ', shortLabel: 'ПМ',
+    description: 'Перемещения между складами', icon: '⇄', section: 'documents',
+    initiallyCollapsed: true,
+  },
   // Reports
+  { id: 'opening-balance-list', to: '/goods/opening-balances', label: 'Начальные остатки', shortLabel: 'НО', description: 'Товары и задолженность на дату начала', icon: '◷', section: 'documents' },
+  { id: 'inventory-turnover-report', to: '/reports/inventory-turnover', label: 'Обороты ТМЦ', shortLabel: 'ОТ', description: 'Входящие остатки и обороты склада', icon: '▤', section: 'reports' },
+  { id: 'reference-material-packages', to: '/references/material-packages', label: 'Упаковки товаров', shortLabel: 'Уп', description: 'Пересчет в базовую единицу', icon: '▣', section: 'references' },
+  { id: 'reference-material-characteristics', to: '/references/material-characteristics', label: 'Характеристики товаров', shortLabel: 'Хр', description: 'Складские характеристики', icon: '◇', section: 'references' },
+  { id: 'reference-material-series', to: '/references/material-series', label: 'Серии товаров', shortLabel: 'Ср', description: 'Изоляция серий на складе', icon: '#', section: 'references' },
   {
     id: 'work-execution-register', to: '/registers/work-execution', label: 'Регистр работ', shortLabel: 'РР',
     description: 'Движения по объектам и сметам',
@@ -284,6 +305,10 @@ const items: NavItem[] = [
     id: 'reference-materials', to: '/references/materials', label: 'Материалы', shortLabel: 'Мт',
     description: 'Материалы, единицы и цены',
     icon: '◇', section: 'references',
+  },
+  {
+    id: 'reference-warehouses', to: '/references/warehouses', label: 'Склады', shortLabel: 'Ск',
+    description: 'Места хранения ТМЦ', icon: '▣', section: 'references',
   },
   {
     id: 'reference-persons', to: '/references/persons', label: 'Физлица', shortLabel: 'ФЛ',

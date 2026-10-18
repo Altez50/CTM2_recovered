@@ -1,0 +1,2 @@
+-r ../../current/api/requirements-dev.txt
+pywin32>=310; sys_platform == "win32"

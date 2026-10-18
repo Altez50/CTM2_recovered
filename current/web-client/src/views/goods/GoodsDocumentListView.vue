@@ -3,7 +3,7 @@
     <section class="panel">
       <div class="panel-body">
         <div class="toolbar search-row">
-          <input v-model="search" class="input toolbar-grow" type="search" placeholder="Поиск по номеру, контрагенту" />
+          <input v-model="search" class="input toolbar-grow" type="search" placeholder="Поиск по номеру, контрагенту, складу" />
         </div>
 
         <ListCommandBar :state="state" :config="config" @open-settings="settingsOpen = true" />
@@ -72,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import DataTable from '../../components/common/DataTable.vue'
 import ContextMenu from '../../components/common/ContextMenu.vue'
 import ListCommandBar from '../../components/documents/ListCommandBar.vue'
@@ -81,13 +81,26 @@ import { useHeaderBar } from '../../composables/useHeaderBar'
 import { useDocumentList } from '../../composables/useDocumentList'
 import { useDocumentListContextMenu } from '../../composables/useDocumentListContextMenu'
 import { goodsDocumentListConfig } from '../../config/documentLists'
+import { useWorkspaceStore } from '../../stores/workspace'
 import type { DocListRow } from '../../config/documentListTypes'
 import type { ColumnState } from '../../composables/useListSettings'
 
 const props = withDefaults(defineProps<{ tabId?: string; kind?: 'receipt' | 'issue' }>(), { kind: 'receipt' })
+const workspace = useWorkspaceStore()
 const config = computed(() => goodsDocumentListConfig(props.kind ?? 'receipt'))
 const state = useDocumentList(config.value)
 const ctx = useDocumentListContextMenu(config.value, state)
+
+// Workspace panes stay mounted while hidden. Refresh when the user returns so
+// documents created or changed in another tab are immediately visible.
+watch(
+  () => workspace.activeId,
+  (activeId, previousId) => {
+    if (activeId === props.tabId && previousId !== activeId) {
+      void state.loadItems()
+    }
+  },
+)
 
 useHeaderBar(props.tabId, computed(() => config.value.title), computed(() => []))
 

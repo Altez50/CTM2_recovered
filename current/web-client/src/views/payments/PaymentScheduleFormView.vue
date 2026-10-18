@@ -10,25 +10,25 @@
             <input v-model="form.number" class="input" type="text" placeholder="Авто" />
           </FormField>
           <FormField label="Период с">
-            <input v-model="form.date_from" class="input" type="date" :disabled="isPosted" />
+            <input v-model="form.date_from" class="input" type="date" :disabled="isPosted || !auth.canWriteTrade" />
           </FormField>
           <FormField label="Период по">
-            <input v-model="form.date_to" class="input" type="date" :disabled="isPosted" />
+            <input v-model="form.date_to" class="input" type="date" :disabled="isPosted || !auth.canWriteTrade" />
           </FormField>
           <FormField label="Объект">
-            <select v-model="form.object_id" class="select" :disabled="isPosted">
+            <select v-model="form.object_id" class="select" :disabled="isPosted || !auth.canWriteTrade">
               <option value="">Не выбран</option>
               <option v-for="item in objects" :key="item.id" :value="item.id">{{ item.name }}</option>
             </select>
           </FormField>
           <FormField label="Договор">
-            <select v-model="form.contract_id" class="select" :disabled="isPosted">
+            <select v-model="form.contract_id" class="select" :disabled="isPosted || !auth.canWriteTrade">
               <option value="">Не выбран</option>
               <option v-for="item in contracts" :key="item.id" :value="item.id">{{ item.number }}</option>
             </select>
           </FormField>
           <FormField label="Ответственный">
-            <select v-model="form.responsible_id" class="select" :disabled="isPosted">
+            <select v-model="form.responsible_id" class="select" :disabled="isPosted || !auth.canWriteTrade">
               <option value="">Не выбран</option>
               <option v-for="item in persons" :key="item.id" :value="item.id">{{ item.full_name }}</option>
             </select>
@@ -36,26 +36,26 @@
         </div>
 
         <div class="toolbar">
-          <button class="button button-primary" type="button" title="Сохранить" :disabled="loading" @click="save">💾</button>
+          <button class="button button-primary" type="button" title="Сохранить" :disabled="loading || isPosted || !auth.canWriteTrade" @click="save">💾</button>
           <button v-if="auth.isAdmin && !isPosted" class="button button-success" type="button" title="Провести" @click="post">✓</button>
           <button v-if="auth.isAdmin && isPosted" class="button button-warning" type="button" title="Отменить проведение" @click="unpost">↺</button>
           <span class="toolbar-spacer" />
-          <button v-if="!isPosted" class="button button-secondary" type="button" @click="suggestIncoming">Подобрать поступления</button>
-          <button v-if="!isPosted" class="button button-secondary" type="button" @click="suggestPayroll">Подобрать зарплату</button>
-          <button v-if="!isPosted" class="button button-secondary" type="button" @click="suggestGoodsReceipts">Из поступлений ТМЦ</button>
-          <button v-if="!isPosted" class="button button-secondary" type="button" @click="suggestGoodsIssues">Из реализаций ТМЦ</button>
-          <button v-if="!isPosted" class="button button-secondary" type="button" @click="addLine">+ Строка</button>
+          <button v-if="auth.canWriteTrade && !isPosted" class="button button-secondary" type="button" @click="suggestIncoming">Подобрать поступления</button>
+          <button v-if="auth.canWriteTrade && !isPosted" class="button button-secondary" type="button" @click="suggestPayroll">Подобрать зарплату</button>
+          <button v-if="auth.canWriteTrade && !isPosted" class="button button-secondary" type="button" @click="suggestGoodsReceipts">Из поступлений ТМЦ</button>
+          <button v-if="auth.canWriteTrade && !isPosted" class="button button-secondary" type="button" @click="suggestGoodsIssues">Из реализаций ТМЦ</button>
+          <button v-if="auth.canWriteTrade && !isPosted" class="button button-secondary" type="button" @click="addLine">+ Строка</button>
         </div>
 
         <DataTable :columns="lineColumns" :rows="form.lines as Record<string, unknown>[]" :loading="loading" empty-text="Нет плановых строк">
           <template #cell-direction="{ row }">
-            <select v-model="(row as unknown as PaymentScheduleLine).direction" class="select select-sm" :disabled="isPosted">
+            <select v-model="(row as unknown as PaymentScheduleLine).direction" class="select select-sm" :disabled="isPosted || !auth.canWriteTrade">
               <option value="incoming">Поступление</option>
               <option value="outgoing">Платеж</option>
             </select>
           </template>
           <template #cell-category="{ row }">
-            <select v-model="(row as unknown as PaymentScheduleLine).category" class="select select-sm" :disabled="isPosted">
+            <select v-model="(row as unknown as PaymentScheduleLine).category" class="select select-sm" :disabled="isPosted || !auth.canWriteTrade">
               <option value="customer_stage">Этап заказчика</option>
               <option value="payroll">Зарплата</option>
               <option value="supplier">Поставщик</option>
@@ -66,25 +66,25 @@
             </select>
           </template>
           <template #cell-planned_date="{ row }">
-            <input v-model="(row as unknown as PaymentScheduleLine).planned_date" class="input input-sm" type="date" :disabled="isPosted" />
+            <input v-model="(row as unknown as PaymentScheduleLine).planned_date" class="input input-sm" type="date" :disabled="isPosted || !auth.canWriteTrade" />
           </template>
           <template #cell-counterparty_id="{ row }">
-            <select v-model="(row as unknown as PaymentScheduleLine).counterparty_id" class="select select-sm" :disabled="isPosted">
+            <select v-model="(row as unknown as PaymentScheduleLine).counterparty_id" class="select select-sm" :disabled="isPosted || !auth.canWriteTrade">
               <option value="">—</option>
               <option v-for="item in counterparties" :key="item.id" :value="item.id">{{ item.name }}</option>
             </select>
           </template>
           <template #cell-planned_amount="{ row }">
-            <input v-model.number="(row as unknown as PaymentScheduleLine).planned_amount" class="input input-sm" type="number" step="0.01" min="0" :disabled="isPosted" />
+            <input v-model.number="(row as unknown as PaymentScheduleLine).planned_amount" class="input input-sm" type="number" step="0.01" min="0" :disabled="isPosted || !auth.canWriteTrade" />
           </template>
           <template #cell-description="{ row }">
-            <input v-model="(row as unknown as PaymentScheduleLine).description" class="input input-sm" type="text" :disabled="isPosted" />
+            <input v-model="(row as unknown as PaymentScheduleLine).description" class="input input-sm" type="text" :disabled="isPosted || !auth.canWriteTrade" />
           </template>
           <template #cell-fact_amount="{ row }">
             {{ formatNumber((row as unknown as PaymentScheduleLine).fact_amount ?? 0) }}
           </template>
           <template #cell-actions="{ row }">
-            <button v-if="!isPosted" class="button button-danger button-sm" type="button" @click="removeLineByRow(row as unknown as PaymentScheduleLine)">✕</button>
+            <button v-if="auth.canWriteTrade && !isPosted" class="button button-danger button-sm" type="button" @click="removeLineByRow(row as unknown as PaymentScheduleLine)">✕</button>
           </template>
         </DataTable>
 

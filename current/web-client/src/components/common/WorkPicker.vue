@@ -7,6 +7,7 @@
         type="button"
         class="ref-input-field"
         :class="{ placeholder: !hasSelection }"
+        :disabled="props.disabled"
         @click="open = true"
         @keydown.f4.prevent="open = true"
       >
@@ -19,7 +20,7 @@
         type="button"
         class="ref-btn ref-btn-open"
         :class="{ compact: props.compact }"
-        :disabled="props.modelValue === null"
+        :disabled="props.disabled || props.modelValue === null"
         :title="props.modelValue !== null ? 'Открыть карточку выбранной работы' : 'Сначала выберите работу'"
         aria-label="Открыть карточку выбранной работы"
         @click="openCurrentSelectionCard"
@@ -32,6 +33,7 @@
         type="button"
         class="ref-btn ref-btn-choose"
         :class="{ compact: props.compact }"
+        :disabled="props.disabled"
         title="Выбрать (F4)"
         aria-label="Выбрать работу"
         @click="open = true"
@@ -45,6 +47,7 @@
         type="button"
         class="ref-btn ref-btn-clear"
         :class="{ compact: props.compact }"
+        :disabled="props.disabled"
         title="Очистить"
         aria-label="Очистить значение"
         @click="clear"
@@ -159,10 +162,12 @@ const props = withDefaults(defineProps<{
   selectedLabel?: string | null
   compact?: boolean
   showOpenButton?: boolean
+  disabled?: boolean
 }>(), {
   selectedLabel: null,
   compact: false,
   showOpenButton: false,
+  disabled: false,
 })
 
 const emit = defineEmits<{

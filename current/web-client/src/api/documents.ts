@@ -82,6 +82,7 @@ export interface EstimateImportResult {
   imported: number
   warnings?: string[]
   format: string
+  preview?: boolean
 }
 
 export function importEstimateText(
@@ -89,6 +90,7 @@ export function importEstimateText(
   format: 'tsv' | 'json' | 'xlsx',
   body: string | ArrayBuffer,
   replace = true,
+  preview = false,
 ): Promise<ApiResponse<EstimateImportResult>> {
   const isBinary = format === 'xlsx' && typeof body !== 'string'
   const headers: Record<string, string> = isBinary
@@ -96,7 +98,7 @@ export function importEstimateText(
     : format === 'json'
       ? { 'Content-Type': 'application/json' }
       : { 'Content-Type': 'text/tab-separated-values; charset=utf-8' }
-  const qs = new URLSearchParams({ format, replace: String(replace) })
+  const qs = new URLSearchParams({ format, replace: String(replace), preview: String(preview) })
   return apiRequest<ApiResponse<EstimateImportResult>>(
     `/api/documents/estimates/${id}/import-text?${qs}`,
     { method: 'POST', headers, body: body as BodyInit },

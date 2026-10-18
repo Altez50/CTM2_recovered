@@ -9,6 +9,10 @@ export interface ReferenceListParams {
   sort_by?: string
   sort_order?: 'asc' | 'desc'
   review_status?: 'all' | 'ok' | 'incorrect' | 'corrected'
+  organization_id?: number
+  counterparty_id?: number
+  material_id?: number
+  characteristic_id?: number
 }
 
 function toQuery(params: ReferenceListParams) {

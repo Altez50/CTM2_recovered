@@ -9,10 +9,8 @@ Vue.js 3 web client for the construction time management system.
 - **Vite** - Fast build tool and dev server
 - **Vue Router** - Client-side routing
 - **Pinia** - State management
-- **Tailwind CSS** - Utility-first CSS framework
-- **Axios** - HTTP client for API calls
-- **VueUse** - Collection of Vue composition utilities
-- **ESLint & Prettier** - Code quality and formatting
+- **CSS** - Project styles in `src/styles.css` and scoped component styles
+- **Fetch wrapper** - API client in `src/api/client.ts`
 
 ## Project Structure
 
@@ -51,16 +49,12 @@ npm run build
 # Preview production build
 npm run preview
 
-# Run tests
-npm run test:unit
-
 # Run E2E tests
 npm run test:e2e
-
-# Lint and fix files
-npm run lint
-npm run format
 ```
+
+Unit-test, lint, and formatter scripts are not currently configured. They are
+tracked as quality gaps in the repository-level `SPEC_REVIEW.md`.
 
 ## API Configuration
 
@@ -78,7 +72,7 @@ The application uses Tailwind CSS with custom breakpoints:
 - **Tablet**: 768px - 1023px
 - **Desktop**: ≥ 1024px
 
-## Features (Planned)
+## Implemented core areas
 
 - User authentication with JWT
 - Reference data management (counterparties, objects, works, persons, organizations)
@@ -87,10 +81,10 @@ The application uses Tailwind CSS with custom breakpoints:
 - Document posting workflow
 - Print forms generation (PDF, Excel)
 - Work execution register
-- Mobile-optimized interface
+- Responsive document forms
 
-## Related Documentation
+## Related documentation
 
-- [Requirements](./../.kiro/specs/web-client-access/requirements.md)
-- [Design Document](./../.kiro/specs/web-client-access/design.md)
-- [Implementation Tasks](./../.kiro/specs/web-client-access/tasks.md)
+- [`SPEC_REVIEW.md`](../../SPEC_REVIEW.md)
+- [`DEVELOPMENT_PLAN.md`](../../DEVELOPMENT_PLAN.md)
+- [`DOCUMENT_LIST_SPEC.md`](../../DOCUMENT_LIST_SPEC.md)

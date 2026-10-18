@@ -15,6 +15,7 @@
       </div>
       <WorkspaceTabs :compact="compact" />
       <div class="header-actions">
+        <RouterLink v-if="user.role === 'admin' && user.organization_ids == null" to="/administration/users">Доступ пользователей</RouterLink>
         <div class="user-card">
           <span class="muted">{{ user.role }}</span>
           <strong>{{ user.full_name || user.username }}</strong>

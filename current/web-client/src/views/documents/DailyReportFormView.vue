@@ -60,7 +60,7 @@
         <div class="toolbar">
           <button class="button button-secondary" type="button" @click="fillFromEstimate">Заполнить из сметы</button>
           <button class="button button-secondary" type="button" @click="addLine">Добавить строку</button>
-          <button v-if="isEdit" :disabled="form.is_posted" class="button button-secondary" type="button" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
+          <button v-if="isEdit && auth.canManageCost" :disabled="form.is_posted" class="button button-secondary" type="button" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
           <label class="sum-toggle">
             <input v-model="showSumColumns" type="checkbox" />
             Суммовые колонки
@@ -212,7 +212,7 @@ const form = ref<DailyReport>({
 const isEdit = Boolean(props.id)
 const canChangePosting = computed(() => auth.isAdmin && isEdit)
 
-const headerTitle = computed(() => (isEdit ? `Отчет ${form.value.number}` : 'Новый ежедневный отчет'))
+const headerTitle = computed(() => (isEdit ? `Отчёт прораба ${form.value.number}` : 'Новый отчёт прораба'))
 const headerActions = computed<HeaderAction[]>(() => [
   { key: 'list', icon: '←', title: 'К списку', to: '/documents/daily-reports' },
   {

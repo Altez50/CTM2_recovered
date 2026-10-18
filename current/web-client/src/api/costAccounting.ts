@@ -316,8 +316,14 @@ export function deleteCostCalculation(id: number) {
   })
 }
 
+export function restoreCostCalculation(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/cost/cost-calculations/${id}/restore`, {
+    method: 'POST',
+  })
+}
+
 export function calculateCost(id: number) {
-  return apiRequest<ApiResponse<{ calculation_id: number; status: string; record_count: number }>>(
+  return apiRequest<ApiResponse<{ calculation_id: number; status: string; record_count: number; warnings: string[] }>>(
     `/api/cost/cost-calculations/${id}/calculate`,
     { method: 'POST' },
   )
@@ -387,6 +393,7 @@ export interface DocImportResult {
   imported: number
   warnings?: string[]
   format: string
+  preview?: boolean
 }
 
 /**
@@ -400,6 +407,7 @@ export function importDocumentText(
   format: 'tsv' | 'json' | 'xlsx',
   body: string | ArrayBuffer,
   replace = true,
+  preview = false,
 ): Promise<ApiResponse<DocImportResult>> {
   const isBinary = format === 'xlsx' && typeof body !== 'string'
   const headers: Record<string, string> = isBinary
@@ -407,7 +415,7 @@ export function importDocumentText(
     : format === 'json'
       ? { 'Content-Type': 'application/json' }
       : { 'Content-Type': 'text/tab-separated-values; charset=utf-8' }
-  const qs = new URLSearchParams({ format, replace: String(replace) })
+  const qs = new URLSearchParams({ format, replace: String(replace), preview: String(preview) })
   return apiRequest<ApiResponse<DocImportResult>>(
     `/api/cost/${kind}/${docId}/import-text?${qs}`,
     { method: 'POST', headers, body: body as BodyInit },

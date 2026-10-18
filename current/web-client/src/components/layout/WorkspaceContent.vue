@@ -26,6 +26,10 @@ const router = useRouter()
 
 // Карта kind -> ленивый компонент. shallowRef: компоненты не реактивны.
 const componentMap = shallowRef<Record<string, Component>>({
+  'sale-list': defineAsyncComponent(() => import('../../views/sales/SaleListView.vue')),
+  'sale-form': defineAsyncComponent(() => import('../../views/sales/SaleFormView.vue')),
+  'purchase-list': defineAsyncComponent(() => import('../../views/purchases/PurchaseListView.vue')),
+  'purchase-form': defineAsyncComponent(() => import('../../views/purchases/PurchaseFormView.vue')),
   dashboard: defineAsyncComponent(() => import('../../views/DashboardView.vue')),
   'estimate-list': defineAsyncComponent(() => import('../../views/documents/EstimateListView.vue')),
   'estimate-form': defineAsyncComponent(() => import('../../views/documents/EstimateFormView.vue')),
@@ -46,6 +50,15 @@ const componentMap = shallowRef<Record<string, Component>>({
   'goods-receipt-form': defineAsyncComponent(() => import('../../views/goods/GoodsDocumentFormView.vue')),
   'goods-issue-list': defineAsyncComponent(() => import('../../views/goods/GoodsDocumentListView.vue')),
   'goods-issue-form': defineAsyncComponent(() => import('../../views/goods/GoodsDocumentFormView.vue')),
+  'goods-price-adjustment-list': defineAsyncComponent(() => import('../../views/goods/GoodsPriceAdjustmentListView.vue')),
+  'opening-balance-list': defineAsyncComponent(() => import('../../views/goods/OpeningBalanceListView.vue')),
+  'opening-balance-form': defineAsyncComponent(() => import('../../views/goods/OpeningBalanceFormView.vue')),
+  'inventory-turnover-report': defineAsyncComponent(() => import('../../views/reports/InventoryTurnoverReport.vue')),
+  'goods-price-adjustment-form': defineAsyncComponent(() => import('../../views/goods/GoodsPriceAdjustmentFormView.vue')),
+  'goods-return-list': defineAsyncComponent(() => import('../../views/goods/GoodsReturnListView.vue')),
+  'goods-return-form': defineAsyncComponent(() => import('../../views/goods/GoodsReturnFormView.vue')),
+  'goods-transfer-list': defineAsyncComponent(() => import('../../views/goods/GoodsTransferListView.vue')),
+  'goods-transfer-form': defineAsyncComponent(() => import('../../views/goods/GoodsTransferFormView.vue')),
   // Cost accounting documents
   'material-consumption-list': defineAsyncComponent(() => import('../../views/documents/MaterialConsumptionListView.vue')),
   'material-consumption-form': defineAsyncComponent(() => import('../../views/documents/MaterialConsumptionFormView.vue')),
@@ -65,6 +78,7 @@ const componentMap = shallowRef<Record<string, Component>>({
   'work-catalog': defineAsyncComponent(() => import('../../views/references/WorkCatalogView.vue')),
   'reference-list': defineAsyncComponent(() => import('../../views/references/ReferenceView.vue')),
   'sync': defineAsyncComponent(() => import('../../views/SyncView.vue')),
+  'user-access': defineAsyncComponent(() => import('../../views/UserAccessView.vue')),
 })
 
 function resolveComponent(kind: WorkspaceTab['kind']): Component {
@@ -82,6 +96,8 @@ function resolveProps(tab: WorkspaceTab): Record<string, unknown> {
   if (tab.params.type) {
     props.type = tab.params.type
   }
+  if (tab.params.purchaseKind) props.kind = tab.params.purchaseKind
+  if (tab.params.saleKind) props.kind = tab.params.saleKind
   // ТМЦ-формы параметризуются типом документа (kind) по виду таба,
   // т.к. router.props игнорируется в MDI-рендере.
   if (tab.kind === 'goods-receipt-list' || tab.kind === 'goods-receipt-form') {

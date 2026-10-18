@@ -8,7 +8,7 @@
 
         <ListCommandBar :state="state" :config="config" @open-settings="settingsOpen = true">
           <template #create>
-            <button class="button button-primary" type="button" @click="showForm = !showForm">+ Платёж</button>
+            <button class="button button-primary" type="button" :disabled="!state.canCreate.value" @click="showForm = !showForm">+ Платёж</button>
           </template>
         </ListCommandBar>
 
@@ -20,7 +20,7 @@
                 <input v-model="newTx.date" class="input" type="date" />
               </FormField>
               <FormField label="Направление">
-                <select v-model="newTx.direction" class="select">
+                <select v-model="newTx.direction" class="select" aria-label="Направление">
                   <option value="incoming">Поступление</option>
                   <option value="outgoing">Платёж</option>
                 </select>
@@ -35,13 +35,29 @@
                 </select>
               </FormField>
               <FormField label="Контрагент">
-                <select v-model="newTx.counterparty_id" class="select">
+                <select v-model="newTx.counterparty_id" class="select" aria-label="Контрагент" @change="newTx.contract_id = ''">
                   <option value="">—</option>
                   <option v-for="item in counterparties" :key="item.id" :value="item.id">{{ item.name }}</option>
                 </select>
               </FormField>
+              <FormField label="Организация">
+                <select v-model="organizationId" class="select" aria-label="Организация" @change="newTx.contract_id = ''">
+                  <option value="">—</option>
+                  <option v-for="item in organizations" :key="item.id" :value="item.id">{{ item.name }}</option>
+                </select>
+              </FormField>
+              <FormField label="Договор">
+                <select v-model="newTx.contract_id" class="select" aria-label="Договор" :disabled="!organizationId || !newTx.counterparty_id">
+                  <option value="">—</option>
+                  <option v-for="item in availableContracts" :key="item.id" :value="item.id">{{ item.number }}</option>
+                </select>
+              </FormField>
+              <FormField label="Аванс / переплата">
+                <span><input v-model="newTx.allow_advance" type="checkbox" aria-label="Разрешить аванс по договору" /> Разрешить аванс по договору</span>
+                <small>Сумма сверх долга учитывается как аванс и зачитывается при последующей поставке по тем же аналитикам.</small>
+              </FormField>
               <FormField label="Сумма">
-                <input v-model.number="newTx.amount" class="input" type="number" step="0.01" min="0" />
+                <input v-model.number="newTx.amount" class="input" aria-label="Сумма" type="number" step="0.01" min="0" />
               </FormField>
               <FormField label="Описание">
                 <input v-model="newTx.description" class="input" type="text" />
@@ -121,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import DataTable from '../../components/common/DataTable.vue'
 import FormField from '../../components/common/FormField.vue'
 import ContextMenu from '../../components/common/ContextMenu.vue'
@@ -133,7 +149,7 @@ import { useDocumentListContextMenu } from '../../composables/useDocumentListCon
 import { paymentTransactionListConfig } from '../../config/documentLists'
 import { createPaymentTransaction } from '../../api/payments'
 import { listReferences } from '../../api/references'
-import type { Counterparty } from '../../types/models'
+import type { ContractRecord, Counterparty, OrganizationRecord } from '../../types/models'
 import type { DocListRow } from '../../config/documentListTypes'
 import type { ColumnState } from '../../composables/useListSettings'
 
@@ -165,13 +181,32 @@ function onResetColumns() {
 
 const showForm = ref(false)
 const counterparties = ref<Counterparty[]>([])
+const organizations = ref<OrganizationRecord[]>([])
+const contracts = ref<ContractRecord[]>([])
+const organizationId = ref<number | ''>('')
+const availableContracts = computed(() => contracts.value.filter(c =>
+  c.organization_id === Number(organizationId.value) && c.counterparty_id === Number(newTx.counterparty_id)))
 const newTx = reactive({
   date: new Date().toISOString().slice(0, 10),
   direction: 'outgoing' as 'incoming' | 'outgoing',
   category: 'other' as 'customer_stage' | 'payroll' | 'supplier' | 'tax' | 'other',
   counterparty_id: '' as number | '',
+  contract_id: '' as number | '',
+  allow_advance: false,
   amount: 0,
   description: '',
+})
+watch([organizationId, () => newTx.counterparty_id], async () => {
+  contracts.value = []
+  if (!organizationId.value || !newTx.counterparty_id) return
+  const org = organizationId.value
+  const cp = newTx.counterparty_id
+  try {
+    const res = await listReferences('contracts', { page_size: 500, organization_id: org, counterparty_id: cp })
+    if (org === organizationId.value && cp === newTx.counterparty_id) contracts.value = res.data as ContractRecord[]
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Ошибка загрузки договоров'
+  }
 })
 
 function formatDate(value: string | null | undefined) {
@@ -192,6 +227,8 @@ async function createTx() {
       direction: newTx.direction,
       category: newTx.category,
       counterparty_id: newTx.counterparty_id || null,
+      contract_id: newTx.contract_id || null,
+      allow_advance: newTx.allow_advance,
       amount: newTx.amount,
       description: newTx.description || null,
     })
@@ -206,6 +243,8 @@ onMounted(async () => {
   try {
     const cpRes = await listReferences('counterparties', { page_size: 100 })
     counterparties.value = cpRes.data as Counterparty[]
+    const orgRes = await listReferences('organizations', { page_size: 500 })
+    organizations.value = orgRes.data as OrganizationRecord[]
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Ошибка загрузки контрагентов'
   }

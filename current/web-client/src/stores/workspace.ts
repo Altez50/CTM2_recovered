@@ -22,6 +22,11 @@ export interface NavigationTarget {
  */
 
 export type DocumentKind =
+  | 'purchase-list'
+  | 'sale-list'
+  | 'sale-form'
+  | 'purchase-form'
+  | 'user-access'
   | 'dashboard'
   | 'estimate-list'
   | 'estimate-form'
@@ -38,6 +43,15 @@ export type DocumentKind =
   | 'goods-receipt-form'
   | 'goods-issue-list'
   | 'goods-issue-form'
+  | 'goods-price-adjustment-list'
+  | 'opening-balance-list'
+  | 'opening-balance-form'
+  | 'inventory-turnover-report'
+  | 'goods-price-adjustment-form'
+  | 'goods-return-list'
+  | 'goods-return-form'
+  | 'goods-transfer-list'
+  | 'goods-transfer-form'
   | 'material-consumption-list'
   | 'material-consumption-form'
   | 'machinery-usage-list'
@@ -96,6 +110,10 @@ const REFERENCE_TITLES: Record<string, string> = {
   persons: 'Физлица',
   organizations: 'Организации',
   contracts: 'Договоры',
+  warehouses: 'Склады',
+  'material-packages': 'Упаковки товаров',
+  'material-characteristics': 'Характеристики товаров',
+  'material-series': 'Серии товаров',
 }
 
 /** Карта route name -> метаданные таба. */
@@ -111,6 +129,18 @@ function specFromRoute(route: RouteLocationNormalizedLoaded): RouteSpec | null {
   const name = route.name as string | null
   const params = route.params as Record<string, string | undefined>
   switch (name) {
+    case 'sale-list':
+      return { kind: 'sale-list', title: 'Продажи', routeName: 'sale-list', closable: true }
+    case 'sale-create':
+      return { kind: 'sale-form', title: 'Новый документ продажи', routeName: 'sale-create', closable: true, transient: true }
+    case 'sale-edit':
+      return { kind: 'sale-form', title: `Продажа №${params.id ?? ''}`, routeName: 'sale-edit', closable: true }
+    case 'purchase-list':
+      return { kind: 'purchase-list', title: 'Закупки', routeName: 'purchase-list', closable: true }
+    case 'purchase-create':
+      return { kind: 'purchase-form', title: 'Новый закупочный документ', routeName: 'purchase-create', closable: true, transient: true }
+    case 'purchase-edit':
+      return { kind: 'purchase-form', title: `Закупка №${params.id ?? ''}`, routeName: 'purchase-edit', closable: true }
     case 'dashboard':
       return { kind: 'dashboard', title: 'Обзор', routeName: 'dashboard', closable: true }
     case 'estimate-list':
@@ -120,7 +150,7 @@ function specFromRoute(route: RouteLocationNormalizedLoaded): RouteSpec | null {
     case 'estimate-edit':
       return { kind: 'estimate-form', title: `Смета №${params.id ?? ''}`, routeName: 'estimate-edit', closable: true }
     case 'daily-report-list':
-      return { kind: 'daily-report-list', title: 'Ежедневные отчёты', routeName: 'daily-report-list', closable: true }
+      return { kind: 'daily-report-list', title: 'Отчёты прораба', routeName: 'daily-report-list', closable: true }
     case 'daily-report-create':
       return { kind: 'daily-report-form', title: 'Новый отчёт', routeName: 'daily-report-create', closable: true, transient: true }
     case 'daily-report-edit':
@@ -163,6 +193,32 @@ function specFromRoute(route: RouteLocationNormalizedLoaded): RouteSpec | null {
       return { kind: 'goods-issue-form', title: 'Новое списание ТМЦ', routeName: 'goods-issue-create', closable: true, transient: true }
     case 'goods-issue-edit':
       return { kind: 'goods-issue-form', title: `Списание №${params.id ?? ''}`, routeName: 'goods-issue-edit', closable: true }
+    case 'goods-price-adjustment-list':
+      return { kind: 'goods-price-adjustment-list', title: 'Корректировки цен', routeName: 'goods-price-adjustment-list', closable: true }
+    case 'opening-balance-list':
+      return { kind: 'opening-balance-list', title: 'Начальные остатки', routeName: 'opening-balance-list', closable: true }
+    case 'opening-balance-create':
+      return { kind: 'opening-balance-form', title: 'Новые начальные остатки', routeName: 'opening-balance-create', closable: true, transient: true }
+    case 'opening-balance-edit':
+      return { kind: 'opening-balance-form', title: `Начальные остатки №${params.id ?? ''}`, routeName: 'opening-balance-edit', closable: true }
+    case 'inventory-turnover-report':
+      return { kind: 'inventory-turnover-report', title: 'Обороты ТМЦ', routeName: 'inventory-turnover-report', closable: true }
+    case 'goods-price-adjustment-create':
+      return { kind: 'goods-price-adjustment-form', title: 'Новая корректировка цены', routeName: 'goods-price-adjustment-create', closable: true, transient: true }
+    case 'goods-price-adjustment-edit':
+      return { kind: 'goods-price-adjustment-form', title: `Корректировка №${params.id ?? ''}`, routeName: 'goods-price-adjustment-edit', closable: true }
+    case 'goods-return-list':
+      return { kind: 'goods-return-list', title: 'Возвраты товаров', routeName: 'goods-return-list', closable: true }
+    case 'goods-return-create':
+      return { kind: 'goods-return-form', title: 'Новый возврат', routeName: 'goods-return-create', closable: true, transient: true }
+    case 'goods-return-edit':
+      return { kind: 'goods-return-form', title: `Возврат №${params.id ?? ''}`, routeName: 'goods-return-edit', closable: true }
+    case 'goods-transfer-list':
+      return { kind: 'goods-transfer-list', title: 'Перемещения ТМЦ', routeName: 'goods-transfer-list', closable: true }
+    case 'goods-transfer-create':
+      return { kind: 'goods-transfer-form', title: 'Новое перемещение ТМЦ', routeName: 'goods-transfer-create', closable: true, transient: true }
+    case 'goods-transfer-edit':
+      return { kind: 'goods-transfer-form', title: `Перемещение №${params.id ?? ''}`, routeName: 'goods-transfer-edit', closable: true }
     // Cost accounting — material consumptions
     case 'material-consumption-list':
       return { kind: 'material-consumption-list', title: 'Расход материалов', routeName: 'material-consumption-list', closable: true }
@@ -209,6 +265,8 @@ function specFromRoute(route: RouteLocationNormalizedLoaded): RouteSpec | null {
       return { kind: 'cost-profitability-report', title: 'Рентабельность', routeName: 'cost-profitability-report', closable: true }
     case 'sync':
       return { kind: 'sync', title: 'Синхронизация', routeName: 'sync', closable: true }
+    case 'user-access':
+      return { kind: 'user-access', title: 'Пользователи и доступ', routeName: 'user-access', closable: true }
     case 'work-list':
       return { kind: 'work-catalog', title: 'Работы (справочник)', routeName: 'work-list', closable: true }
     case 'reference-list': {
@@ -231,12 +289,24 @@ export function tabIdFromRoute(route: RouteLocationNormalizedLoaded): string | n
   if (!spec) return null
   const params = route.params as Record<string, string | undefined>
   switch (spec.kind) {
+    case 'sale-list':
+      return `sale-list:${params.saleKind}`
+    case 'sale-form':
+      return `sale-form:${params.saleKind}:${spec.transient ? 'new' : params.id}`
+    case 'purchase-list':
+      return `purchase-list:${params.purchaseKind}`
+    case 'purchase-form':
+      return `purchase-form:${params.purchaseKind}:${spec.transient ? 'new' : params.id}`
     case 'estimate-form':
     case 'daily-report-form':
     case 'timesheet-form':
     case 'payment-schedule-form':
     case 'goods-receipt-form':
     case 'goods-issue-form':
+    case 'goods-price-adjustment-form':
+    case 'opening-balance-form':
+    case 'goods-return-form':
+    case 'goods-transfer-form':
     case 'material-consumption-form':
     case 'machinery-usage-form':
     case 'subcontract-acceptance-form':
@@ -335,6 +405,8 @@ export const useWorkspaceStore = defineStore('workspace', {
         active &&
         active.transient &&
         active.kind === spec.kind &&
+        (spec.kind !== 'purchase-form' || active.params.purchaseKind === params.purchaseKind) &&
+        (spec.kind !== 'sale-form' || active.params.saleKind === params.saleKind) &&
         !spec.transient
       ) {
         const idx = this.tabs.findIndex((t) => t.id === active.id)
@@ -377,6 +449,11 @@ export const useWorkspaceStore = defineStore('workspace', {
         'import-profiles',
         'goods-receipt-list',
         'goods-issue-list',
+        'goods-price-adjustment-list',
+        'opening-balance-list',
+        'inventory-turnover-report',
+        'goods-return-list',
+        'goods-transfer-list',
         'material-consumption-list',
         'machinery-usage-list',
         'subcontract-acceptance-list',
@@ -389,6 +466,7 @@ export const useWorkspaceStore = defineStore('workspace', {
         'reference-list',
         'work-catalog',
         'sync',
+        'user-access',
       ]
       if (singletonKinds.includes(spec.kind)) {
         const sameKind = this.tabs.find((t) => t.kind === spec.kind && t.id === candidateId)

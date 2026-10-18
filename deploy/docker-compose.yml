@@ -9,10 +9,13 @@ services:
     env_file:
       - .deploy.kassir.env
     environment:
+      CTM_ENV: production
       DATABASE_PATH: /app/construction-ctm2.db
       DATABASE_CONFIG_PATH: /app/env.ini
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      ALLOW_SEED_DATA: "false"
       CORS_ORIGINS: http://abitek.su:18080,https://abitek.su:18443,https://abitek.su:10443
+      # JWT_SECRET_KEY / SYNC_TOKEN come from env_file (.deploy.kassir.env).
+      # NOTE: no ${VAR:?...} interpolation — prod docker-compose 1.17 rejects it.
     volumes:
       - /srv/ctm/data/construction-ctm2.db:/app/construction-ctm2.db
 

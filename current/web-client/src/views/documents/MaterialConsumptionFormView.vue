@@ -3,8 +3,8 @@
     <section class="panel"><div class="panel-body">
       <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
       <div class="form-grid doc-header-grid">
-        <FormField label="Номер"><input v-model="form.number" class="input" placeholder="авто" :disabled="form.is_posted" /></FormField>
-        <FormField label="Дата"><input v-model="form.date" class="input" type="date" :disabled="form.is_posted" /></FormField>
+        <FormField label="Номер"><input v-model="form.number" class="input" placeholder="авто" :disabled="!canEdit" /></FormField>
+        <FormField label="Дата"><input v-model="form.date" class="input" type="date" :disabled="!canEdit" /></FormField>
         <FormField label="Объект">
           <EntityPicker
             :model-value="form.object_id ?? null"
@@ -12,7 +12,7 @@
             title="Выбор объекта" description="Найдите и выберите объект строительства."
             placeholder="Выберите объект" search-placeholder="Поиск по названию…"
             empty-text="Объекты не найдены" size="full"
-            :disabled="form.is_posted"
+            :disabled="!canEdit"
             :load-page="loadObjectPage"
             @update:model-value="(v) => { form.object_id = v }"
             @change="(item) => { form.object_name = item?.label ?? null }"
@@ -25,7 +25,7 @@
             title="Выбор сметы" description="Найдите и выберите смету."
             placeholder="Выберите смету" search-placeholder="Поиск по номеру…"
             empty-text="Сметы не найдены" size="full"
-            :disabled="form.is_posted"
+            :disabled="!canEdit"
             :load-page="loadEstimatePage"
             @update:model-value="(v) => { form.estimate_id = v }"
             @change="(item) => { form.estimate_number = item?.label ?? null }"
@@ -38,20 +38,20 @@
             title="Выбор прораба" description="Найдите и выберите сотрудника."
             placeholder="Выберите прораба" search-placeholder="Поиск по ФИО…"
             empty-text="Сотрудники не найдены" size="full"
-            :disabled="form.is_posted"
+            :disabled="!canEdit || auth.user?.role === 'foreman'"
             :load-page="loadPersonPage"
             @update:model-value="(v) => { form.foreman_id = v }"
             @change="(item) => { form.foreman_name = item?.label ?? null }"
           />
         </FormField>
-        <FormField label="Склад"><input v-model="form.warehouse" class="input" :disabled="form.is_posted" /></FormField>
+        <FormField label="Склад"><input v-model="form.warehouse" class="input" :disabled="!canEdit" /></FormField>
       </div>
       <div class="toolbar" style="margin-top: 1rem">
-        <button class="button button-secondary" @click="addLine" :disabled="form.is_posted">+ Строка</button>
-        <button class="button button-secondary" :disabled="!isEdit || form.is_posted" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
-        <button class="button button-primary" title="Сохранить" @click="save">💾</button>
-        <button v-if="isEdit && !form.is_posted" class="button button-success" title="Провести" @click="post">✓</button>
-        <button v-if="isEdit && form.is_posted" class="button button-warning" title="Отменить проведение" @click="unpost">↺</button>
+        <button class="button button-secondary" @click="addLine" :disabled="!canEdit">+ Строка</button>
+        <button v-if="auth.canManageCost" class="button button-secondary" :disabled="!isEdit || form.is_posted" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
+        <button class="button button-primary" title="Сохранить" :disabled="!canEdit" @click="save">💾</button>
+        <button v-if="auth.canManageCost && isEdit && !form.is_posted" class="button button-success" title="Провести" @click="post">✓</button>
+        <button v-if="auth.canManageCost && isEdit && form.is_posted" class="button button-warning" title="Отменить проведение" @click="unpost">↺</button>
         <span v-if="form.id" :class="['status-pill', form.is_posted ? 'posted' : 'draft']">{{ form.is_posted ? 'Проведен' : 'Черновик' }}</span>
       </div>
       <table class="line-table" style="margin-top: 1rem" v-if="form.lines.length">
@@ -59,14 +59,14 @@
         <tbody>
           <tr v-for="(line, i) in form.lines" :key="i">
             <td>{{ i + 1 }}</td>
-            <td class="picker-cell"><WorkPicker :model-value="line.work_id ?? null" :selected-label="line.work_name ?? null" compact @update:model-value="(v) => { line.work_id = v }" @change="(w) => { line.work_name = w?.name ?? null; if (w?.unit) line.unit = w.unit }" /></td>
-            <td class="picker-cell"><EntityPicker :model-value="line.material_id ?? null" :selected-label="line.material_name ?? null" title="Выбор материала" placeholder="Выберите" search-placeholder="Поиск…" empty-text="Не найдено" size="compact" :disabled="form.is_posted" edit-kind="materials" :load-page="loadMaterialPage" @update:model-value="(v) => { line.material_id = v }" @change="(item) => { line.material_name = item?.label ?? null; if (item?.meta?.price) { line.price = item.meta.price as number }; if (item?.meta?.unit) line.unit = String(item.meta.unit) }" /></td>
-            <td><input v-model="line.unit" class="input input-sm" placeholder="ед." :disabled="form.is_posted" /></td>
+            <td class="picker-cell"><WorkPicker :model-value="line.work_id ?? null" :selected-label="line.work_name ?? null" compact :disabled="!canEdit" @update:model-value="(v) => { line.work_id = v }" @change="(w) => { line.work_name = w?.name ?? null; if (w?.unit) line.unit = w.unit }" /></td>
+            <td class="picker-cell"><EntityPicker :model-value="line.material_id ?? null" :selected-label="line.material_name ?? null" title="Выбор материала" placeholder="Выберите" search-placeholder="Поиск…" empty-text="Не найдено" size="compact" :disabled="!canEdit" edit-kind="materials" :load-page="loadMaterialPage" @update:model-value="(v) => { line.material_id = v }" @change="(item) => { line.material_name = item?.label ?? null; if (item?.meta?.price) { line.price = item.meta.price as number }; if (item?.meta?.unit) line.unit = String(item.meta.unit) }" /></td>
+            <td><input v-model="line.unit" class="input input-sm" placeholder="ед." :disabled="!canEdit" /></td>
             <td class="num">{{ line.planned_quantity }}</td>
-            <td><input v-model.number="line.actual_quantity" class="input input-sm" type="number" step="0.01" :disabled="form.is_posted" /></td>
-            <td><input v-model.number="line.price" class="input input-sm" type="number" step="0.01" :disabled="form.is_posted" @change="calcLine(line)" /></td>
+            <td><input v-model.number="line.actual_quantity" class="input input-sm" type="number" step="0.01" :disabled="!canEdit" /></td>
+            <td><input v-model.number="line.price" class="input input-sm" type="number" step="0.01" :disabled="!canEdit" @change="calcLine(line)" /></td>
             <td class="num">{{ (line.actual_quantity * line.price).toFixed(2) }}</td>
-            <td><button class="button button-secondary button-sm" @click="form.lines.splice(i, 1)" :disabled="form.is_posted">✕</button></td>
+            <td><button class="button button-secondary button-sm" @click="form.lines.splice(i, 1)" :disabled="!canEdit">✕</button></td>
           </tr>
         </tbody>
       </table>
@@ -91,8 +91,10 @@ import { listReferences } from '../../api/references'
 import { listEstimates } from '../../api/documents'
 import type { Estimate } from '../../types/models'
 import type { ObjectRecord, PersonRecord, MaterialRecord } from '../../types/models'
+import { useAuthStore } from '../../stores/auth'
 
 const props = defineProps<{ tabId?: string; id?: string }>()
+const auth = useAuthStore()
 const router = useRouter(); const route = useRoute()
 const isEdit = computed(() => !!props.id || !!route.params.id)
 const { hasBasedOn, loadSource } = useBasedOnPrefill()
@@ -105,6 +107,13 @@ const today = new Date().toISOString().slice(0, 10)
 const emptyLine = (): MaterialConsumptionLine => ({ line_number: 0, work_id: null, material_id: null, planned_quantity: 0, actual_quantity: 0, price: 0, sum: 0, cost_element_id: null })
 
 const form = ref<MaterialConsumption>({ number: '', date: today, object_id: null, estimate_id: null, foreman_id: null, warehouse: '', lines: [emptyLine()] })
+const canEdit = computed(() => {
+  if (form.value.is_posted) return false
+  if (auth.canManageCost) return true
+  return auth.user?.role === 'foreman'
+    && !!auth.user.person_id
+    && (!form.value.id || form.value.foreman_id === auth.user.person_id)
+})
 
 function calcLine(line: MaterialConsumptionLine) { line.sum = +(line.actual_quantity * line.price).toFixed(2) }
 function addLine() { form.value.lines.push(emptyLine()) }
@@ -124,7 +133,7 @@ async function loadPersonPage(params: { search: string; page: number; pageSize: 
 }
 async function loadMaterialPage(params: { search: string; page: number; pageSize: number }) {
   const resp = await listReferences('materials', { page: params.page, page_size: Math.min(params.pageSize, 50), search: params.search })
-  return { items: (resp.data as MaterialRecord[]).map(m => ({ id: m.id, label: m.name, caption: m.unit_name ?? null, meta: { price: m.price ?? 0, unit: m.unit_name ?? '' } })), pages: resp.pagination?.pages ?? 1 }
+  return { items: (resp.data as MaterialRecord[]).filter(m => !m.is_group).map(m => ({ id: m.id, label: m.name, caption: m.unit_name ?? null, meta: { price: m.price ?? 0, unit: m.unit_name ?? '' } })), pages: resp.pagination?.pages ?? 1 }
 }
 
 async function save() {
@@ -151,6 +160,7 @@ async function post() {
 async function unpost() { try { await unpostMaterialConsumption(form.value.id!); form.value.is_posted = false } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка отмены' } }
 
 onMounted(async () => {
+  if (!isEdit.value && auth.user?.role === 'foreman') form.value.foreman_id = auth.user.person_id ?? null
   if (isEdit.value) { try { const r = await getMaterialConsumption(+(props.id || route.params.id)); form.value = r.data } catch (err) { error.value = err instanceof Error ? err.message : 'Ошибка загрузки' } }
   else if (hasBasedOn) {
     const result = await loadSource()

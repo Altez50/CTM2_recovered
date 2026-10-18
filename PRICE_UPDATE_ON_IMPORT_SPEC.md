@@ -1,6 +1,10 @@
 # Спецификация: обновление цен материалов при загрузке накладных
 
-Обновлено: 2026-08-24
+Версия: 0.2
+Обновлено: 2026-09-02
+Статус реализации: **не начато**; policy, price preview/apply и UI не найдены.
+Зависимости: P0/P1 из `DEVELOPMENT_PLAN.md`, `SECURITY_BASELINE_SPEC.md`.
+Владелец: требуется назначить. Проверено по коду: 2026-09-02.
 
 ---
 
@@ -17,13 +21,13 @@
 ## 2. Текущее состояние (AS-IS)
 
 - Импорт строк ТМЦ: `preview_goods_lines_import`
-  ([api/goods_services.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/goods_services.py#L1897)).
+  ([`current/api/goods_services.py`](current/api/goods_services.py)).
   Разбор XLSX/XLS, алиасы заголовков (`ценабезндс`, `цена`, `price` …),
   разрешение материала по `material_id` → `код` → наименование.
 - Карточка материала: `materials (code, name, unit_id, price)`
-  ([api/database.py#L187-L200](file:///f:/2026f/ctm3/CTM2_recovered/current/api/database.py#L187-L200)).
+  ([`current/api/database.py`](current/api/database.py)).
 - Профили импорта Excel хранятся в `constants` под ключом `goods.import_profiles`
-  ([api/import_profiles.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/import_profiles.py)).
+  ([`current/api/import_profiles.py`](current/api/import_profiles.py)).
 - `materials.price` при импорте **не изменяется**; цены в диалоге загрузки
   показываются только в строках документа.
 - Средняя цена для отчёта остатков считается по регистру инвентаризации
@@ -84,13 +88,21 @@
 
 ```
 POST /api/goods/import-apply-prices
-Тело: { "updates": [ {"material_id": 12, "new_price": 8150.0} ] }
-Ответ: { "data": { "updated": 1 }, "message": "Обновлено цен: 1" }
+Тело: { "updates": [ {
+  "material_id": 12,
+  "expected_current_price": 7800.0,
+  "new_price": 8150.0,
+  "source_line": 3
+} ] }
+Ответ: { "data": { "updated": 1, "conflicts": [] }, "message": "Обновлено цен: 1" }
 Права: manager, admin (как у записи ТМЦ).
 ```
 
 Применение: `UPDATE materials SET price = ?, modified_at/updated_at = now`;
 на каждое изменение — запись в `audit_logs` (кто, что, старое/новое значение).
+Обновление условное: если текущая цена уже не равна `expected_current_price`,
+материал попадает в `conflicts` и не перезаписывается без нового preview. Повтор
+того же apply с тем же idempotency key не создаёт повторный audit/sync event.
 
 ### 3.4. Правила сверки цен
 
@@ -107,6 +119,9 @@ POST /api/goods/import-apply-prices
      строкой «Материал X: разные цены в строках 3 и 17 — проверьте файл».
 5. Единицы не сравниваются (в файле возможен другой формат записи);
    семантика цены остаётся на ответственности пользователя.
+6. Для одного материала в apply остаётся одно итоговое изменение. Если пользователь
+   вручную отметил одну из нескольких строк, именно выбранная строка определяет
+   `new_price`; правило «последняя строка» применяется только к auto-режиму.
 
 ### 3.5. UI
 
@@ -125,7 +140,8 @@ POST /api/goods/import-apply-prices
 
 Изменение `materials.price` идёт штатным путём (uuid + `updated_at`):
 peer-обмен и разрешение конфликтов «позже изменённая версия выигрывает»
-работают без доработок. Дополнительных таблиц не вводится.
+работают без доработок. Apply обязан вызвать штатную регистрацию sync-change;
+одного `UPDATE materials` недостаточно. Дополнительных таблиц не вводится.
 
 ---
 
@@ -148,3 +164,7 @@ peer-обмен и разрешение конфликтов «позже изм
 5. Политики `off / preview / auto` соблюдаются, `auto` пишет audit_log.
 6. Изменение цены доезжает до офисного узла через sync без ручных действий.
 7. Права: применение цен недоступно роли `foreman`.
+8. Если цена изменилась после preview, apply возвращает conflict и не затирает
+   более новое значение; повтор с тем же idempotency key безопасен.
+9. Для дублирующихся строк материала применяется ровно одна выбранная цена,
+   audit и sync содержат одно итоговое изменение материала.

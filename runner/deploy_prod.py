@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""CTM production deploy via paramiko (password auth to LAN IP).
+"""CTM production deploy via paramiko (key auth to LAN IP, see prod_ssh.py).
 
-No SSH keys, no ControlMaster, no external .ps1 — just paramiko.
-Output goes to stdout (one line per message); the runner's _pump routes
-tagged lines into the Deploy tab.
+No ControlMaster, no external .ps1 — just paramiko. Output goes to stdout
+(one line per message); the runner's _pump routes tagged lines into the
+Deploy tab.
 
 Usage:
     python deploy_prod.py [--repo-root <path>]
@@ -16,20 +16,13 @@ import sys
 import tempfile
 import time
 
-# --- connection (LAN — verified working 2026-08-01) ------------------------
-# PASS is only a fallback for the GUI runner (runner.py spawns this with no
-# console to type into). The PowerShell deploy (deploy-prod.ps1) prompts for
-# the kassir password and passes it via CTM_KASSIR_PASS, which takes priority.
-HOST = "192.168.0.39"
-USER = "kassir"
-PASS = "7535789"
-PORT = 22
+import prod_ssh
 
 REMOTE_CURRENT = "/srv/ctm/current"
 REMOTE_DEPLOY  = "/srv/ctm/deploy"
 
 # --- deploy script that runs ON prod ----------------------------------------
-# Backs up, extracts, docker-compose up --build, verifies build stamps.
+# Backs up, extracts, docker-compose up --build, verifies health + build stamps.
 DEPLOY_SH = r"""#!/bin/bash
 set -euo pipefail
 
@@ -59,15 +52,42 @@ echo "[OK] extracted"
 echo ">>> docker-compose up -d --build ..."
 cd "$REMOTE_DEPLOY"
 set -a && . ./.deploy.kassir.env && set +a
+# Fail fast if required secrets are missing (docker-compose 1.17 cannot
+# enforce this via ${VAR:?...} interpolation).
+for v in JWT_SECRET_KEY SYNC_TOKEN; do
+  if [ -z "${!v}" ]; then
+    echo "[!] $v is not set in .deploy.kassir.env"
+    exit 1
+  fi
+done
 (docker-compose up -d --build 2>&1) || \
   (echo "[!] docker-compose up failed, trying --no-cache rebuild ..." && \
    docker-compose build --no-cache api frontend && \
    docker-compose up -d --force-recreate)
 echo "[OK] containers up"
 
-# 4. Verify build stamps
+# 4. Verify the API actually starts and is reachable through the proxy.
+# A matching stamp in a restarting container does not mean a working deploy.
 echo "=== Verifying ..."
-sleep 2
+HEALTH_URL="https://192.168.0.39:8443/api/health"
+HEALTHY=false
+for attempt in $(seq 1 30); do
+  if HEALTH_JSON="$(curl -kfsS --connect-timeout 2 --max-time 3 -H 'Host: abitek.su' "$HEALTH_URL" 2>/dev/null)" && \
+     python3 -c 'import json,sys; r=json.loads(sys.argv[1]).get("data", {}); sys.exit(0 if r.get("status") == "ok" and r.get("build") == sys.argv[2] else 1)' "$HEALTH_JSON" "$BUILD_VER"; then
+    HEALTHY=true
+    break
+  fi
+  sleep 2
+done
+if [ "$HEALTHY" != true ]; then
+  echo "[!] API health check failed or returned the wrong build"
+  docker-compose ps
+  docker-compose logs --tail=60 api reverse-proxy
+  exit 1
+fi
+echo "[OK] API healthy through reverse proxy (build $BUILD_VER)"
+
+# 5. Verify build stamps inside both running containers.
 API_BUILD="$(docker-compose exec -T api cat /app/api/BUILD_VERSION 2>/dev/null || echo MISSING)"
 FRONT_BUILD="$(docker-compose exec -T frontend cat /usr/share/nginx/html/ctm/build-version.txt 2>/dev/null || echo MISSING)"
 echo "expected : $BUILD_VER"
@@ -157,7 +177,7 @@ def main():
         repo_root = sys.argv[2]
 
     log("=== CTM production deploy ===")
-    log(f"Target: {USER}@{HOST}:{PORT}  (LAN, password auth)")
+    log(f"Target: {prod_ssh.USER}@{prod_ssh.HOST}:{prod_ssh.PORT}  (LAN)")
     log("")
 
     # 1. Stamp + pack
@@ -165,13 +185,12 @@ def main():
     log(f"Build version: {build_ver}")
     current_tgz, deploy_tgz = pack_tarballs(repo_root)
 
-    # 2. Connect
-    passw = os.environ.get("CTM_KASSIR_PASS") or PASS
-    log(f">>> Connecting to {USER}@{HOST}:{PORT} ...")
+    # 2. Connect (dedicated key first, password fallback — see prod_ssh.py)
+    log(f">>> Connecting to {prod_ssh.USER}@{prod_ssh.HOST}:{prod_ssh.PORT} ...")
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(HOST, port=PORT, username=USER, password=passw, timeout=15)
-    log("[OK] Connected")
+    auth = prod_ssh.connect(ssh)
+    log(f"[OK] Connected ({auth})")
 
     # 3. Upload
     sftp = ssh.open_sftp()

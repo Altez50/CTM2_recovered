@@ -1,4 +1,5 @@
 from __future__ import annotations
+from api.trade_access import add_scope, require_organization, organizations, rollback_on_error
 
 import calendar
 import io
@@ -87,10 +88,30 @@ REFERENCE_CONFIG = {
         "label_field": "name",
         "search_fields": ("name", "code"),
         "sortable": {"id", "name", "code", "price"},
-        "joined_select": ", u.name AS unit_name",
-        "joined_clause": "LEFT JOIN units u ON u.id = m.unit_id",
+        "joined_select": ", u.name AS unit_name, parent.name AS parent_name",
+        "joined_clause": "LEFT JOIN units u ON u.id = m.unit_id LEFT JOIN materials parent ON parent.id = m.parent_id",
+    },
+    "warehouses": {
+        "table": "warehouses",
+        "alias": "wh",
+        "label_field": "name",
+        "search_fields": ("name", "code", "address"),
+        "sortable": {"id", "name", "code", "organization_id"},
+        "joined_select": ", org.name AS organization_name, ob.name AS default_object_name, p.full_name AS responsible_name",
+        "joined_clause": (
+            "LEFT JOIN organizations org ON org.id = wh.organization_id "
+            "LEFT JOIN objects ob ON ob.id = wh.default_object_id "
+            "LEFT JOIN persons p ON p.id = wh.responsible_id"
+        ),
     },
 }
+
+
+from api.inventory_dimensions import REFERENCE_KINDS, REFERENCE_TABLES, validate_reference, assert_reference_unused, lock_material_dimensions, validate_material_unit_change
+for _kind, _table in REFERENCE_TABLES.items():
+    REFERENCE_CONFIG[_kind] = dict(table=_table, alias='a', label_field='name', search_fields=('name',),
+        sortable={'id', 'name', 'material_id'}, joined_select=', m.name AS material_name',
+        joined_clause='LEFT JOIN materials m ON m.id = a.material_id')
 
 
 def build_pagination(page: int, page_size: int, total: int) -> Pagination:
@@ -153,6 +174,10 @@ def list_references(
     sort_by: str | None,
     sort_order: str,
     review_status: str | None = None,
+    organization_id: int | None = None,
+    counterparty_id: int | None = None,
+    material_id: int | None = None,
+    characteristic_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], Pagination]:
     if kind not in REFERENCE_CONFIG:
         raise HTTPException(status_code=404, detail="Unknown reference")
@@ -167,6 +192,12 @@ def list_references(
 
     where_parts = [f"{alias}.marked_for_deletion = 0"]
     params: list[Any] = []
+    if kind in REFERENCE_KINDS and material_id is not None:
+        where_parts.append(f'{alias}.material_id = ?')
+        params.append(material_id)
+    if kind == 'material-series' and characteristic_id is not None:
+        where_parts.append(f'({alias}.characteristic_id = ? OR {alias}.characteristic_id IS NULL)')
+        params.append(characteristic_id)
     if search:
         search_value = f"%{search.strip()}%"
         clauses = [f"COALESCE({alias}.{field}, '') LIKE ?" for field in config.get("search_fields", (label_field,))]
@@ -175,7 +206,15 @@ def list_references(
     if kind == "works" and review_status and review_status != "all":
         where_parts.append(f"COALESCE({alias}.specification_review_status, 'ok') = ?")
         params.append(review_status)
+    if kind in ("warehouses", "contracts") and organization_id is not None:
+        where_parts.append(f"{alias}.organization_id = ?")
+        params.append(organization_id)
+    if kind == "contracts" and counterparty_id is not None:
+        where_parts.append(f"{alias}.counterparty_id = ?")
+        params.append(counterparty_id)
 
+    if kind in ('organizations', 'contracts', 'warehouses'):
+        add_scope(connection, where_parts, params, f"{alias}.{'id' if kind == 'organizations' else 'organization_id'}")
     where_sql = " AND ".join(where_parts)
     total = connection.execute(
         f"SELECT COUNT(*) FROM {config['table']} {alias} {config['joined_clause']} WHERE {where_sql}",
@@ -218,6 +257,8 @@ def get_reference(connection: sqlite3.Connection, *, kind: str, item_id: int) ->
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Reference item not found")
+    if kind in ('organizations', 'contracts', 'warehouses'):
+        require_organization(connection, row['id' if kind == 'organizations' else 'organization_id'])
     return _cast_flags(row_to_dict(row) or {}, "marked_for_deletion", "is_group")
 
 
@@ -240,11 +281,50 @@ def get_reference_by_uuid(connection: sqlite3.Connection, *, kind: str, item_uui
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Reference item not found")
+    if kind in ('organizations', 'contracts', 'warehouses'):
+        require_organization(connection, row['id' if kind == 'organizations' else 'organization_id'])
     return _cast_flags(row_to_dict(row) or {}, "marked_for_deletion", "is_group")
 
 
+def _validate_warehouse_reference(
+    connection: sqlite3.Connection, payload: dict[str, Any], *, item_id: int | None = None
+) -> None:
+    organization_id = int(payload["organization_id"])
+    organization = connection.execute(
+        "SELECT id FROM organizations WHERE id = ? AND marked_for_deletion = 0",
+        (organization_id,),
+    ).fetchone()
+    if organization is None:
+        raise HTTPException(status_code=400, detail="Укажите действующую организацию склада")
+    code = str(payload.get("code") or "").strip()
+    payload["code"] = code
+    payload["name"] = str(payload["name"]).strip()
+    if not payload["name"]:
+        raise HTTPException(status_code=400, detail="Укажите наименование склада")
+    if code:
+        duplicate = connection.execute(
+            """SELECT id FROM warehouses
+               WHERE organization_id = ? AND code = ? AND marked_for_deletion = 0
+                 AND (? IS NULL OR id <> ?)""",
+            (organization_id, code, item_id, item_id),
+        ).fetchone()
+        if duplicate is not None:
+            raise HTTPException(status_code=400, detail="Код склада уже используется в организации")
+
+
 def create_reference(connection: sqlite3.Connection, *, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
-    validated = _sync_stamp_for_create(_coerce_bools(validate_reference_payload(kind, payload)))
+    normalized = _coerce_bools(validate_reference_payload(kind, payload))
+    if kind in ('warehouses', 'contracts'):
+        require_organization(connection, normalized.get('organization_id'))
+    if kind == 'organizations' and organizations(connection) is not None:
+        if True:
+            raise HTTPException(status_code=403, detail='Нет права создавать или изменять эту организацию')
+    if kind == "warehouses":
+        _validate_warehouse_reference(connection, normalized)
+    if kind in REFERENCE_KINDS:
+        lock_material_dimensions(connection, normalized['material_id'])
+        validate_reference(connection, kind, normalized)
+    validated = _sync_stamp_for_create(normalized)
     columns = ", ".join(validated.keys())
     placeholders = ", ".join(["?"] * len(validated))
     connection.execute(
@@ -252,11 +332,22 @@ def create_reference(connection: sqlite3.Connection, *, kind: str, payload: dict
         list(validated.values()),
     )
     item_id = last_insert_id(connection)
-    register_sync_change(connection, entity_type=kind, entity_uuid=str(validated["uuid"]), operation="INSERT")
+    if kind not in REFERENCE_KINDS:
+        register_sync_change(connection, entity_type=kind, entity_uuid=str(validated["uuid"]), operation="INSERT")
     connection.commit()
     return get_reference(connection, kind=kind, item_id=item_id)
 
 
+def _lock_dimension_reference(connection, kind, item_id, existing, new_material_id=None):
+    material_ids = {existing['material_id'], new_material_id} - {None}
+    lock_material_dimensions(connection, *material_ids)
+    current = get_reference(connection, kind=kind, item_id=item_id)
+    if current['material_id'] not in material_ids:
+        raise HTTPException(status_code=409, detail='Принадлежность аналитики изменилась: повторите операцию')
+    return current
+
+
+@rollback_on_error
 def update_reference(
     connection: sqlite3.Connection,
     *,
@@ -264,9 +355,42 @@ def update_reference(
     item_id: int,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
+    if kind in ('organizations', 'warehouses', 'contracts'):
+        connection.execute(f"UPDATE {REFERENCE_CONFIG[kind]['table']} SET id = id WHERE id = ?", (item_id,))
+    if kind == 'materials':
+        lock_material_dimensions(connection, item_id)
     existing = get_reference(connection, kind=kind, item_id=item_id)
+    if kind == 'contracts' and any(key in payload and payload[key] != existing[key] for key in ('credit_limit','credit_limit_strict')):
+        if getattr(getattr(connection,'trade_user',None),'role','admin') != 'admin':
+            raise HTTPException(status_code=403,detail='Кредитный лимит изменяет администратор')
+    if kind == 'warehouses' and 'order_receipt_enabled' not in payload:
+        payload = {**payload, 'order_receipt_enabled': existing['order_receipt_enabled']}
+    if kind == 'warehouses' and 'order_issue_enabled' not in payload:
+        payload = {**payload, 'order_issue_enabled': existing['order_issue_enabled']}
+    if kind == 'contracts':
+        payload = {**{key:existing[key] for key in ('credit_limit','credit_limit_strict') if key not in payload},**payload}
+    normalized = _coerce_bools(validate_reference_payload(kind, payload))
+    if kind in REFERENCE_KINDS:
+        existing = _lock_dimension_reference(connection, kind, item_id, existing, normalized['material_id'])
+    if kind == 'materials':
+        validate_material_unit_change(connection, item_id, normalized.get('unit_id'))
+    if kind in ('warehouses', 'contracts'):
+        require_organization(connection, normalized.get('organization_id'))
+    if kind == 'organizations' and organizations(connection) is not None:
+        if item_id not in organizations(connection):
+            raise HTTPException(status_code=403, detail='Нет права создавать или изменять эту организацию')
+    if kind == "warehouses":
+        if normalized['order_issue_enabled'] != existing['order_issue_enabled'] and connection.execute(
+                'SELECT id FROM sales_documents WHERE warehouse_id = ? AND is_deleted = 0 LIMIT 1', (item_id,)).fetchone():
+            raise HTTPException(status_code=400,detail='Схема отгрузки используется документами продаж')
+        if normalized['order_receipt_enabled'] != existing['order_receipt_enabled'] and connection.execute(
+                'SELECT id FROM purchase_documents WHERE warehouse_id = ? AND is_deleted = 0 LIMIT 1', (item_id,)).fetchone():
+            raise HTTPException(status_code=400, detail='Схема приемки склада используется закупочными документами')
+        _validate_warehouse_reference(connection, normalized, item_id=item_id)
+    if kind in REFERENCE_KINDS:
+        validate_reference(connection, kind, normalized, existing)
     validated = _sync_stamp_for_update(
-        _coerce_bools(validate_reference_payload(kind, payload)),
+        normalized,
         current_uuid=str(existing["uuid"]),
     )
     assignments = ", ".join([f"{column} = ?" for column in validated.keys()])
@@ -276,13 +400,20 @@ def update_reference(
     )
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Reference item not found")
-    register_sync_change(connection, entity_type=kind, entity_uuid=str(existing["uuid"]), operation="UPDATE")
+    if kind not in REFERENCE_KINDS:
+        register_sync_change(connection, entity_type=kind, entity_uuid=str(existing["uuid"]), operation="UPDATE")
     connection.commit()
     return get_reference(connection, kind=kind, item_id=item_id)
 
 
+@rollback_on_error
 def soft_delete_reference(connection: sqlite3.Connection, *, kind: str, item_id: int) -> None:
+    if kind in ('organizations', 'warehouses', 'contracts'):
+        connection.execute(f"UPDATE {REFERENCE_CONFIG[kind]['table']} SET id = id WHERE id = ?", (item_id,))
     existing = get_reference(connection, kind=kind, item_id=item_id)
+    if kind in REFERENCE_KINDS:
+        existing = _lock_dimension_reference(connection, kind, item_id, existing)
+        assert_reference_unused(connection, kind, item_id)
     cursor = connection.execute(
         f"""
         UPDATE {REFERENCE_CONFIG[kind]['table']}
@@ -296,7 +427,8 @@ def soft_delete_reference(connection: sqlite3.Connection, *, kind: str, item_id:
     )
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Reference item not found")
-    register_sync_change(connection, entity_type=kind, entity_uuid=str(existing["uuid"]), operation="DELETE")
+    if kind not in REFERENCE_KINDS:
+        register_sync_change(connection, entity_type=kind, entity_uuid=str(existing["uuid"]), operation="DELETE")
     connection.commit()
 
 
@@ -1396,12 +1528,14 @@ def query_work_execution(
     sort_by: str | None = None,
     sort_order: str | None = None,
     filters: dict[str, str] | None = None,
+    export_all: bool = False,
 ) -> tuple[list[dict[str, Any]], Pagination, dict[str, float]]:
-    from api.list_query import apply_quick_filters, order_by_clause
+    from api.list_query import apply_quick_filters
 
-    page, page_size = _normalize_page(page, page_size)
+    page = max(1, page)
+    page_size = min(max(1, page_size), 500)
     params: list[Any] = []
-    where_parts = ["1 = 1"]
+    where_parts = ["COALESCE(wer.is_deleted, 0) = 0"]
 
     # Поля формы-фильтра (период, объект, смета, работа, заказчик, договор)
     if period_from:
@@ -1442,16 +1576,18 @@ def query_work_execution(
         # Eq-фильтры
         apply_quick_filters(where_parts, params, filters, _WORK_EXECUTION_FILTER_COLUMNS)
 
-    order_sql = order_by_clause(
-        sort_by, sort_order,
-        _WORK_EXECUTION_SORT_WHITELIST,
-        default_column="wer.period",
-        default_order="DESC",
-        tiebreaker="wer.id",
-    )
+    normalized_groups: list[str] = []
+    for raw_group in group_by or []:
+        for group in raw_group.split(","):
+            group = group.strip()
+            if group and group not in normalized_groups:
+                normalized_groups.append(group)
+    allowed_groups = {"object", "estimate", "work", "customer", "contract"}
+    invalid_groups = [group for group in normalized_groups if group not in allowed_groups]
+    if invalid_groups:
+        raise HTTPException(status_code=400, detail=f"Unsupported grouping: {', '.join(invalid_groups)}")
 
-    rows = connection.execute(
-        f"""
+    source_sql = f"""
         SELECT
             wer.*,
             o.name AS object_name,
@@ -1474,70 +1610,89 @@ def query_work_execution(
         LEFT JOIN estimates re ON wer.recorder_type = 'estimate' AND re.id = wer.recorder_id
         LEFT JOIN daily_reports dr ON wer.recorder_type = 'daily_report' AND dr.id = wer.recorder_id
         WHERE {' AND '.join(where_parts)}
-        {order_sql}
-        """,
-        params,
-    ).fetchall()
-    items = rows_to_dicts(rows)
-    for item in items:
-        item["balance_quantity"] = round(float(item["quantity_income"]) - float(item["quantity_expense"]), 2)
-        item["balance_sum"] = round(float(item["sum_income"]) - float(item["sum_expense"]), 2)
+    """
 
-    if group_by:
-        grouped: dict[tuple[Any, ...], dict[str, Any]] = {}
-        for item in items:
-            key = tuple(
-                item.get(f"{field}_name")
-                or item.get(f"{field}_number")
-                or item.get(f"{field}_id")
-                for field in group_by
-            )
-            if key not in grouped:
-                grouped[key] = {
-                    "recorder_type": "grouped",
-                    "recorder_id": 0,
-                    "line_number": 0,
-                    "period": item["period"],
-                    "object_id": item["object_id"],
-                    "object_name": item["object_name"],
-                    "estimate_id": item["estimate_id"],
-                    "estimate_number": item["estimate_number"],
-                    "work_id": item["work_id"],
-                    "work_name": item["work_name"],
-                    "customer_id": item.get("customer_id"),
-                    "customer_name": item.get("customer_name"),
-                    "contract_id": item.get("contract_id"),
-                    "contract_number": item.get("contract_number"),
-                    "recorder_number": None,
-                    "quantity_income": 0.0,
-                    "quantity_expense": 0.0,
-                    "sum_income": 0.0,
-                    "sum_expense": 0.0,
-                }
-            group = grouped[key]
-            group["quantity_income"] += float(item["quantity_income"])
-            group["quantity_expense"] += float(item["quantity_expense"])
-            group["sum_income"] += float(item["sum_income"])
-            group["sum_expense"] += float(item["sum_expense"])
-        items = list(grouped.values())
-        for item in items:
-            item["balance_quantity"] = round(item["quantity_income"] - item["quantity_expense"], 2)
-            item["balance_sum"] = round(item["sum_income"] - item["sum_expense"], 2)
-
-    total = len(items)
-    totals = {
-        "quantity_income": round(sum(float(item["quantity_income"]) for item in items), 2),
-        "quantity_expense": round(sum(float(item["quantity_expense"]) for item in items), 2),
-        "sum_income": round(sum(float(item["sum_income"]) for item in items), 2),
-        "sum_expense": round(sum(float(item["sum_expense"]) for item in items), 2),
+    dimensions = {
+        "object": ("object_id", "object_name"),
+        "estimate": ("estimate_id", "estimate_number"),
+        "work": ("work_id", "work_name"),
+        "customer": ("customer_id", "customer_name"),
+        "contract": ("contract_id", "contract_number"),
     }
+    if normalized_groups:
+        dimension_selects: list[str] = []
+        group_columns: list[str] = []
+        for group, columns in dimensions.items():
+            for column in columns:
+                if group in normalized_groups:
+                    dimension_selects.append(column)
+                    group_columns.append(column)
+                else:
+                    dimension_selects.append(f"NULL AS {column}")
+        result_sql = f"""
+            SELECT
+                MIN(id) AS id,
+                'grouped' AS recorder_type,
+                0 AS recorder_id,
+                0 AS line_number,
+                MAX(period) AS period,
+                {', '.join(dimension_selects)},
+                NULL AS recorder_number,
+                ROUND(SUM(quantity_income), 2) AS quantity_income,
+                ROUND(SUM(quantity_expense), 2) AS quantity_expense,
+                ROUND(SUM(sum_income), 2) AS sum_income,
+                ROUND(SUM(sum_expense), 2) AS sum_expense,
+                ROUND(SUM(quantity_income) - SUM(quantity_expense), 2) AS balance_quantity,
+                ROUND(SUM(sum_income) - SUM(sum_expense), 2) AS balance_sum
+            FROM source
+            GROUP BY {', '.join(group_columns)}
+        """
+    else:
+        result_sql = """
+            SELECT
+                source.*,
+                ROUND(quantity_income - quantity_expense, 2) AS balance_quantity,
+                ROUND(sum_income - sum_expense, 2) AS balance_sum
+            FROM source
+        """
+
+    cte_sql = f"WITH source AS ({source_sql}), result AS ({result_sql})"
+    total = int(connection.execute(f"{cte_sql} SELECT COUNT(*) FROM result", params).fetchone()[0])
+    totals_row = connection.execute(
+        f"""{cte_sql}
+        SELECT
+            COALESCE(ROUND(SUM(quantity_income), 2), 0) AS quantity_income,
+            COALESCE(ROUND(SUM(quantity_expense), 2), 0) AS quantity_expense,
+            COALESCE(ROUND(SUM(sum_income), 2), 0) AS sum_income,
+            COALESCE(ROUND(SUM(sum_expense), 2), 0) AS sum_expense
+        FROM result""",
+        params,
+    ).fetchone()
+    totals = {key: float(totals_row[key] or 0) for key in (
+        "quantity_income", "quantity_expense", "sum_income", "sum_expense"
+    )}
     totals["balance_quantity"] = round(totals["quantity_income"] - totals["quantity_expense"], 2)
     totals["balance_sum"] = round(totals["sum_income"] - totals["sum_expense"], 2)
-    return (
-        items[(page - 1) * page_size : (page - 1) * page_size + page_size],
-        build_pagination(page, page_size, total),
-        totals,
-    )
+
+    sort_aliases = {
+        key: value.split(".")[-1]
+        for key, value in _WORK_EXECUTION_SORT_WHITELIST.items()
+    }
+    sort_column = sort_aliases.get(sort_by or "", "period")
+    direction = "ASC" if (sort_order or "").lower().startswith("asc") else "DESC"
+    order_sql = f"ORDER BY {sort_column} {direction}, id DESC"
+    query_params = list(params)
+    limit_sql = ""
+    if not export_all:
+        limit_sql = "LIMIT ? OFFSET ?"
+        query_params.extend([page_size, (page - 1) * page_size])
+    rows = connection.execute(
+        f"{cte_sql} SELECT * FROM result {order_sql} {limit_sql}",
+        query_params,
+    ).fetchall()
+    items = rows_to_dicts(rows)
+    effective_page_size = total if export_all and total else page_size
+    return items, build_pagination(page, effective_page_size, total), totals
 
 
 def dashboard_summary(connection: sqlite3.Connection, user: UserInfo) -> dict[str, Any]:

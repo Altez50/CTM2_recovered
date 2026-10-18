@@ -148,11 +148,14 @@ export function useDocumentList(config: DocListConfig) {
   }
 
   function isDeletable(row: DocListRow): boolean {
+    if (auth.user?.role === 'viewer' || !config.api.remove) return false
+    if (config.canDelete && !config.canDelete(auth.user, row)) return false
     if (config.canDeleteWhen) return config.canDeleteWhen(row)
     return !row.is_posted
   }
 
   const canOpen = config.canOpen !== false
+  const canCreate = computed(() => auth.user?.role !== 'viewer' && (config.canCreate ? config.canCreate(auth.user) : true))
 
   const selectionCount = computed(() => selectedIds.value.length)
   const hasSelection = computed(() => selectionCount.value > 0)
@@ -183,7 +186,7 @@ export function useDocumentList(config: DocListConfig) {
     }),
   )
 
-  const canBaseOn = computed(() => canOpen && selectedIds.value.length === 1 && !!config.baseOn?.length)
+  const canBaseOn = computed(() => auth.user?.role !== 'viewer' && canOpen && selectedIds.value.length === 1 && !!config.baseOn?.length)
 
   // ── Команды ────────────────────────────────────────────────────────────
   function openItem(id: number | string) {
@@ -363,6 +366,7 @@ export function useDocumentList(config: DocListConfig) {
     canDeleteSelected,
     canBaseOn,
     canOpen,
+    canCreate,
     canManagePosting,
     // действия
     loadItems,

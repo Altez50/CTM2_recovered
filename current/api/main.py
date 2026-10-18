@@ -5,12 +5,14 @@ import gzip
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from api.config import settings
 from api.database import initialize_database
+from api.routers import returns, price_adjustments, opening_balances
 from api.routers import auth, cost_accounting, documents, engineering, goods, payments, references, registers, settlements, sync, system, works
 
 
@@ -82,11 +84,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from api.routers import users
+app.include_router(users.router)
+from api.routers import purchases
+app.include_router(purchases.router)
+from api.routers import sales
+app.include_router(sales.router)
 app.include_router(auth.router)
 app.include_router(references.router)
+app.include_router(opening_balances.router)
 app.include_router(works.router)
 app.include_router(documents.router)
 app.include_router(payments.router)
+app.include_router(price_adjustments.router)
+app.include_router(returns.router)
 app.include_router(goods.router)
 app.include_router(settlements.router)
 app.include_router(registers.router)
@@ -98,6 +109,7 @@ app.include_router(engineering.router)
 
 @app.on_event("startup")
 def on_startup() -> None:
+    settings.validate_security()
     initialize_database()
     # Start the relay-v2 sync bridge if RELAY_SYNC_ENABLED=true. Runs in a
     # background daemon thread inside this process; no-op if disabled.
@@ -123,15 +135,37 @@ def on_shutdown() -> None:
         app.state.relay_bridge = None
 
 
-if settings.web_dist_path.exists() and (settings.web_dist_path / "assets").exists():
-    app.mount("/assets", StaticFiles(directory=settings.web_dist_path / "assets"), name="assets")
+class SpaStaticFiles(StaticFiles):
+    """StaticFiles that falls back to index.html for unknown paths (SPA routing).
+
+    The Vue client is served under the /ctm/ base path. Real assets
+    (JS/CSS under /ctm/assets/) are served normally; any other path that
+    doesn't match a file is treated as a client-side route and returns
+    index.html so vue-router can handle it.
+    """
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
+
+
+_web_dist = settings.web_dist_path
+_web_index = _web_dist / "index.html"
+_web_has_assets = _web_dist.exists() and (_web_dist / "assets").exists()
+
+if _web_has_assets:
+    # Serve the built Vue client under the /ctm/ base path (matches vite base).
+    app.mount("/ctm", SpaStaticFiles(directory=str(_web_dist), html=True), name="web")
 
 
 @app.get("/", include_in_schema=False, response_model=None)
-def root() -> HTMLResponse | FileResponse:
-    index_file = settings.web_dist_path / "index.html"
-    if index_file.exists():
-        return FileResponse(index_file)
+def root() -> RedirectResponse | HTMLResponse:
+    if _web_index.exists():
+        return RedirectResponse(url="/ctm/")
     return HTMLResponse(
         """
         <html>
@@ -145,12 +179,15 @@ def root() -> HTMLResponse | FileResponse:
     )
 
 
+@app.get("/ctm", include_in_schema=False)
+def ctm_root() -> RedirectResponse:
+    return RedirectResponse(url="/ctm/")
+
+
 @app.get("/{full_path:path}", include_in_schema=False, response_model=None)
-def spa_fallback(full_path: str) -> FileResponse | HTMLResponse:
-    index_file = settings.web_dist_path / "index.html"
-    candidate = settings.web_dist_path / full_path
-    if candidate.is_file():
-        return FileResponse(candidate)
-    if index_file.exists():
-        return FileResponse(index_file)
+def spa_fallback(full_path: str) -> RedirectResponse | HTMLResponse:
+    # Anything not under /ctm/ that reaches here is unknown. Redirect to the
+    # app root when the build is present, otherwise 404.
+    if _web_index.exists():
+        return RedirectResponse(url="/ctm/")
     return HTMLResponse("<h1>CTM Web Client build not found</h1>", status_code=404)

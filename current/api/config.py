@@ -44,6 +44,7 @@ def _derive_database_prefix(database_path: Path) -> str:
 
 @dataclass(slots=True)
 class Settings:
+    environment: str
     project_root: Path
     database_path: Path
     web_dist_path: Path
@@ -64,6 +65,33 @@ class Settings:
     postgres_user: str
     postgres_password: str
 
+    @property
+    def is_production(self) -> bool:
+        return self.environment in {"production", "prod"}
+
+    def validate_security(self) -> None:
+        """Reject unsafe production defaults before the API starts serving."""
+        if not self.is_production:
+            return
+
+        problems: list[str] = []
+        if (
+            not self.jwt_secret_key
+            or self.jwt_secret_key == "ctm-dev-secret-change-me-before-production"
+            or len(self.jwt_secret_key) < 32
+        ):
+            problems.append("JWT_SECRET_KEY must be a non-default secret of at least 32 characters")
+        if not self.sync_token or len(self.sync_token) < 24:
+            problems.append("SYNC_TOKEN must be set to a secret of at least 24 characters")
+        if self.allow_seed_data:
+            problems.append("ALLOW_SEED_DATA must be false")
+        if "*" in self.cors_origins:
+            problems.append("CORS_ORIGINS must not contain '*'")
+        if self.db_type in {"postgres", "postgresql"} and not self.postgres_password:
+            problems.append("POSTGRES_PASSWORD must be set for PostgreSQL")
+        if problems:
+            raise RuntimeError("Unsafe production configuration: " + "; ".join(problems))
+
     @classmethod
     def from_env(cls) -> "Settings":
         project_root = Path(__file__).resolve().parent.parent
@@ -71,6 +99,7 @@ class Settings:
         default_dist = project_root / "web-client" / "dist"
         database_path = Path(os.getenv("DATABASE_PATH", str(default_db))).resolve()
         return cls(
+            environment=os.getenv("CTM_ENV", "development").strip().lower(),
             project_root=project_root,
             database_path=database_path,
             web_dist_path=Path(os.getenv("WEB_DIST_PATH", str(default_dist))).resolve(),

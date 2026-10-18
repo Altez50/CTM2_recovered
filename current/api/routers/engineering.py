@@ -28,6 +28,8 @@ router = APIRouter(prefix="/api/engineering", tags=["engineering"])
 
 
 def _admin(user: Annotated[UserInfo, Depends(require_roles("admin"))]) -> UserInfo:
+    if user.organization_ids is not None:
+        raise HTTPException(status_code=403, detail='Общий доступ к таблицам требует неограниченного администратора')
     return user
 
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from api.trade_access import TradeConnection, read_organization_ids
 
 import hmac
 import sqlite3
@@ -24,6 +25,9 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
     connection = get_connection()
     try:
         yield connection
+    except Exception:
+        connection.rollback()
+        raise
     finally:
         connection.close()
 
@@ -127,6 +131,7 @@ def get_current_user(
         username=user_row["username"],
         role=user_row["role"],
         is_active=bool(user_row["is_active"]),
+        organization_ids=read_organization_ids(connection, user_row['id']),
         person_id=user_row["person_id"],
         person_uuid=user_row["person_uuid"],
         full_name=user_row["full_name"],
@@ -137,6 +142,13 @@ def get_current_user(
             WORK_SPECIFICATION_REVIEW_KEY,
         ),
     )
+
+
+def get_trade_db(
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    user: Annotated[UserInfo, Depends(get_current_user)],
+):
+    return TradeConnection(connection, user)
 
 
 def require_roles(*roles: str):
@@ -154,6 +166,7 @@ def require_roles(*roles: str):
 def require_sync_token(
     x_sync_token: Annotated[str | None, Header()] = None,
     authorization: Annotated[str | None, Header()] = None,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)] = None,
 ) -> None:
     """Gate for peer-to-peer sync routes.
 
@@ -161,12 +174,17 @@ def require_sync_token(
     ``/api/sync/*`` request must present it either via the ``X-Sync-Token``
     header or as ``Authorization: Bearer <token>``. Comparison is constant-time.
 
-    When ``SYNC_TOKEN`` is empty (the default, e.g. during development or when
-    the web client uses the same routes under a logged-in user session), this
-    dependency is a no-op and the routes behave exactly as before.
+    When ``SYNC_TOKEN`` is empty, only a logged-in unrestricted administrator
+    may use the global exchange API. A scoped user cannot use it to bypass the
+    organization boundaries of trade routes.
     """
     expected = settings.sync_token
     if not expected:
+        if not authorization or not authorization.lower().startswith('bearer '):
+            raise HTTPException(status_code=401, detail='Для обмена требуется токен узла или администратор')
+        user = get_current_user(authorization[7:].strip(), connection)
+        if user.role != 'admin' or user.organization_ids is not None:
+            raise HTTPException(status_code=403, detail='Общий обмен требует неограниченного администратора')
         return
 
     presented: str | None = x_sync_token

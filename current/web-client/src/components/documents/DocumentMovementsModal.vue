@@ -73,6 +73,8 @@ const invColumns = [
   { key: 'period', label: 'Период' },
   { key: 'material_code', label: 'Код' },
   { key: 'material_name', label: 'Материал' },
+  { key: 'characteristic_name', label: 'Характеристика' },
+  { key: 'series_name', label: 'Серия' },
   { key: 'object_name', label: 'Объект' },
   { key: 'unit_name', label: 'Ед.' },
   { key: 'quantity_income', label: 'Приход (кол-во)' },
@@ -120,10 +122,10 @@ function exportCsv() {
   if (!data.value) return
   downloadCsv(
     `movements_${data.value.document.kind}_${data.value.document.id}`,
-    ['Секция', '№', 'Период', 'Материал/Направление', 'Приход кол-во', 'Расход кол-во', 'Сумма прихода', 'Сумма расхода', 'Начислено', 'Оплачено'],
+    ['Секция', '№', 'Период', 'Материал/Направление', 'Приход кол-во', 'Расход кол-во', 'Сумма прихода', 'Сумма расхода', 'Начислено', 'Оплачено', 'Характеристика', 'Серия'],
     [
-      ...data.value.inventory.map((r) => ['Склад', r.line_number, r.period, r.material_name, r.quantity_income, r.quantity_expense, r.sum_income, r.sum_expense, '', '']),
-      ...data.value.settlements.map((r) => ['Взаиморасчеты', r.line_number, r.period, r.direction, '', '', '', '', r.accrual_amount, r.payment_amount]),
+      ...data.value.inventory.map((r) => ['Склад', r.line_number, r.period, r.material_name, r.quantity_income, r.quantity_expense, r.sum_income, r.sum_expense, '', '', r.characteristic_name, r.series_name]),
+      ...data.value.settlements.map((r) => ['Взаиморасчеты', r.line_number, r.period, r.direction, '', '', '', '', r.accrual_amount, r.payment_amount, '', '']),
     ],
   )
 }

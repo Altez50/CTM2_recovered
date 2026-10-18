@@ -91,7 +91,20 @@
       <form class="page-shell" @submit.prevent="save">
         <div class="form-grid">
           <FormField v-for="field in config.fields" :key="field.key" :label="field.label">
-            <template v-if="field.type === 'select'">
+            <template v-if="field.type === 'reference-picker'">
+              <EntityPicker
+                :model-value="pickerModelValue(field.key)"
+                :selected-label="pickerSelectedLabel(field)"
+                :title="field.pickerTitle || `Выбор: ${field.label}`"
+                placeholder="Не выбрано"
+                search-placeholder="Поиск по номеру или описанию…"
+                empty-text="Договоры не найдены"
+                :load-page="(params) => loadPickerPage(field, params)"
+                @update:model-value="form[field.key] = $event"
+                @change="(item) => updatePickerSelection(field, item)"
+              />
+            </template>
+            <template v-else-if="field.type === 'select'">
               <select v-model="form[field.key]" class="select">
                 <option :value="null">Не выбрано</option>
                 <option v-for="option in field.options?.()" :key="option.id" :value="option.id">
@@ -126,9 +139,11 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '../../stores/auth'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { clearWorkCatalogCache } from '../../api/workCatalog'
 import DataTable from '../../components/common/DataTable.vue'
+import EntityPicker, { type PickerItem } from '../../components/common/EntityPicker.vue'
 import FormField from '../../components/common/FormField.vue'
 import Modal from '../../components/common/Modal.vue'
 import SelectionActionBar from '../../components/common/SelectionActionBar.vue'
@@ -138,6 +153,7 @@ import {
   buildReferencePayload,
   getReferenceConfig,
   loadReferenceHelpers,
+  type FieldConfig,
   type ReferenceFieldHelpers,
 } from '../../composables/referenceFields'
 import type { HeaderAction } from '../../stores/headerBar'
@@ -174,13 +190,13 @@ let searchTimer = 0
 
 const currentKind = computed<ReferenceKind>(() => {
   const value = props.type ?? 'counterparties'
-  if (['counterparties', 'objects', 'works', 'persons', 'organizations', 'contracts', 'materials'].includes(value)) {
+  if (['counterparties', 'objects', 'works', 'persons', 'organizations', 'contracts', 'materials', 'warehouses', 'material-packages', 'material-characteristics', 'material-series'].includes(value)) {
     return value as ReferenceKind
   }
   return 'counterparties'
 })
 
-const config = computed(() => getReferenceConfig(currentKind.value, helpers))
+const config = computed(() => getReferenceConfig(currentKind.value, helpers, useAuthStore().isAdmin))
 
 const displayColumns = computed(() => config.value.columns.filter((c) => c.key !== 'actions'))
 
@@ -201,6 +217,55 @@ function resetForm() {
       form[field.key] = null
     }
   })
+}
+
+function pickerModelValue(key: string): number | null {
+  const value = form[key]
+  if (value === null || value === undefined || value === '') return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function pickerSelectedLabel(field: FieldConfig): string | null {
+  if (!field.selectedLabelKey) return null
+  const value = form[field.selectedLabelKey]
+  return value === null || value === undefined || value === '' ? null : String(value)
+}
+
+async function loadPickerPage(
+  field: FieldConfig,
+  params: { search: string; page: number; pageSize: number },
+) {
+  if (!field.referenceKind || !field.referenceLabelKey) {
+    return { items: [], pages: 1 }
+  }
+  const response = await listReferences(field.referenceKind, {
+    search: params.search,
+    page: params.page,
+    page_size: Math.min(params.pageSize, 50),
+    ...(field.referenceKind === 'material-characteristics' ? { material_id: Number(form.material_id) || undefined } : {}),
+  })
+  const currentId = currentKind.value === field.referenceKind ? editingId.value : null
+  return {
+    items: (response.data as Record<string, any>[])
+      .filter((item) => item.id !== currentId)
+      .map((item) => ({
+        id: Number(item.id),
+        label: String(item[field.referenceLabelKey!] ?? ''),
+        caption: field.referenceCaptionKey ? (item[field.referenceCaptionKey] ?? null) : null,
+      })),
+    pages: response.pagination?.pages ?? 1,
+  }
+}
+
+function updatePickerSelection(field: FieldConfig, item: PickerItem | null) {
+  if (currentKind.value === 'material-series' && field.key === 'material_id') {
+    form.characteristic_id = null; form.characteristic_name = null
+  }
+  form[field.key] = item?.id ?? null
+  if (field.selectedLabelKey) {
+    form[field.selectedLabelKey] = item?.label ?? null
+  }
 }
 
 function getDisplayName(row: ReferenceRecord) {

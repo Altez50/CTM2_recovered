@@ -10,6 +10,7 @@ from fastapi import HTTPException
 
 from api.database import last_insert_id, new_uuid, register_sync_change, utcnow_iso
 from api.list_query import apply_quick_filters, order_by_clause
+from api.models.auth import UserInfo
 
 
 # ── Audit ──────────────────────────────────────────────────────────────────
@@ -22,15 +23,18 @@ def _audit_log(
     resource_type: str,
     resource_id: int,
     details: str = "",
-    user_id: int | None = None,
-    username: str = "",
+    actor: UserInfo | None = None,
 ) -> None:
     """Record an audit entry for a cost accounting operation."""
     try:
         connection.execute(
             """INSERT INTO audit_logs (user_id, username, action, resource_type, resource_id, details, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, username, action, resource_type, resource_id, details, utcnow_iso()),
+            (
+                actor.id if actor else None,
+                actor.username if actor else "",
+                action, resource_type, resource_id, details, utcnow_iso(),
+            ),
         )
     except Exception:
         pass  # Audit should never break the main flow
@@ -274,6 +278,14 @@ def save_material_consumption(
     connection: sqlite3.Connection, payload: dict[str, Any], doc_id: int | None = None
 ) -> dict[str, Any]:
     lines = payload.pop("lines", [])
+    # ``sum`` is a derived field in the UI (actual quantity × price).  Keep the
+    # same invariant for API/import callers so a stale or omitted sum cannot
+    # produce a zero actual-cost movement for a real material consumption.
+    for line in lines:
+        line["sum"] = round(
+            float(line.get("actual_quantity") or 0) * float(line.get("price") or 0),
+            2,
+        )
     payload["date"] = str(payload["date"])
     if doc_id is None:
         payload.setdefault("created_at", _now_iso())
@@ -319,27 +331,47 @@ def save_material_consumption(
 
 
 def delete_material_consumption(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
+    row = connection.execute(
+        "SELECT is_posted FROM material_consumptions WHERE id = ? AND marked_for_deletion = 0",
+        (doc_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Material consumption not found")
+    if row["is_posted"]:
+        raise HTTPException(status_code=400, detail="Cannot delete a posted document. Unpost it first.")
     connection.execute(
         "UPDATE material_consumptions SET marked_for_deletion = 1 WHERE id = ?",
         (doc_id,),
     )
+    _audit_log(connection, action="delete", resource_type="material_consumption",
+               resource_id=doc_id, details=f"Material consumption marked for deletion: #{doc_id}",
+               actor=actor)
     connection.commit()
 
 
 def restore_material_consumption(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
+    row = connection.execute(
+        "SELECT id FROM material_consumptions WHERE id = ? AND marked_for_deletion = 1",
+        (doc_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Deleted material consumption not found")
     connection.execute(
         "UPDATE material_consumptions SET marked_for_deletion = 0 WHERE id = ?",
         (doc_id,),
     )
+    _audit_log(connection, action="restore", resource_type="material_consumption",
+               resource_id=doc_id, details=f"Material consumption restored: #{doc_id}",
+               actor=actor)
     connection.commit()
 
 
 def post_material_consumption(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
     from api.services import _ensure_cost_elements_exist, _get_cost_element_id
 
@@ -359,6 +391,10 @@ def post_material_consumption(
     )
     for line in doc.get("lines", []):
         ce_id = line.get("cost_element_id") or materials_ce
+        amount = round(
+            float(line.get("actual_quantity") or 0) * float(line.get("price") or 0),
+            2,
+        )
         connection.execute(
             """INSERT INTO actual_costs
                (period, date, registrar_type, registrar_id, object_id, estimate_id,
@@ -368,7 +404,7 @@ def post_material_consumption(
                 period, doc_date, doc_id,
                 doc.get("object_id"), doc.get("estimate_id"),
                 line.get("work_id"), ce_id,
-                line.get("actual_quantity", 0), line.get("sum", 0),
+                line.get("actual_quantity", 0), amount,
                 contract_id, _now_iso(),
             ),
         )
@@ -377,12 +413,12 @@ def post_material_consumption(
         (_now_iso(), doc_id),
     )
     _audit_log(connection, action="post", resource_type="material_consumption", resource_id=doc_id,
-               details=f"Material consumption posted: {doc['number']} ({doc['date']})")
+               details=f"Material consumption posted: {doc['number']} ({doc['date']})", actor=actor)
     connection.commit()
 
 
 def unpost_material_consumption(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
     doc = get_material_consumption(connection, doc_id)
     if not doc["is_posted"]:
@@ -396,7 +432,7 @@ def unpost_material_consumption(
         (doc_id,),
     )
     _audit_log(connection, action="unpost", resource_type="material_consumption", resource_id=doc_id,
-               details=f"Material consumption unposted: #{doc_id}")
+               details=f"Material consumption unposted: #{doc_id}", actor=actor)
     connection.commit()
 
 
@@ -539,27 +575,47 @@ def save_machinery_usage_report(
 
 
 def delete_machinery_usage_report(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
+    row = connection.execute(
+        "SELECT is_posted FROM machinery_usage_reports WHERE id = ? AND marked_for_deletion = 0",
+        (doc_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Machinery usage report not found")
+    if row["is_posted"]:
+        raise HTTPException(status_code=400, detail="Cannot delete a posted document. Unpost it first.")
     connection.execute(
         "UPDATE machinery_usage_reports SET marked_for_deletion = 1 WHERE id = ?",
         (doc_id,),
     )
+    _audit_log(connection, action="delete", resource_type="machinery_usage_report",
+               resource_id=doc_id, details=f"Machinery usage report marked for deletion: #{doc_id}",
+               actor=actor)
     connection.commit()
 
 
 def restore_machinery_usage_report(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
+    row = connection.execute(
+        "SELECT id FROM machinery_usage_reports WHERE id = ? AND marked_for_deletion = 1",
+        (doc_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Deleted machinery usage report not found")
     connection.execute(
         "UPDATE machinery_usage_reports SET marked_for_deletion = 0 WHERE id = ?",
         (doc_id,),
     )
+    _audit_log(connection, action="restore", resource_type="machinery_usage_report",
+               resource_id=doc_id, details=f"Machinery usage report restored: #{doc_id}",
+               actor=actor)
     connection.commit()
 
 
 def post_machinery_usage_report(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
     from api.services import _ensure_cost_elements_exist, _get_cost_element_id
 
@@ -613,12 +669,13 @@ def post_machinery_usage_report(
         "UPDATE machinery_usage_reports SET is_posted = 1, posted_at = ? WHERE id = ?",
         (_now_iso(), doc_id),
     )
-    _audit_log(connection, action="post", resource_type="machinery_usage_report", resource_id=doc_id)
+    _audit_log(connection, action="post", resource_type="machinery_usage_report", resource_id=doc_id,
+               actor=actor)
     connection.commit()
 
 
 def unpost_machinery_usage_report(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
     doc = get_machinery_usage_report(connection, doc_id)
     if not doc["is_posted"]:
@@ -631,7 +688,8 @@ def unpost_machinery_usage_report(
         "UPDATE machinery_usage_reports SET is_posted = 0, posted_at = NULL WHERE id = ?",
         (doc_id,),
     )
-    _audit_log(connection, action="unpost", resource_type="machinery_usage_report", resource_id=doc_id)
+    _audit_log(connection, action="unpost", resource_type="machinery_usage_report", resource_id=doc_id,
+               actor=actor)
     connection.commit()
 
 
@@ -774,27 +832,47 @@ def save_subcontract_acceptance(
 
 
 def delete_subcontract_acceptance(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
+    row = connection.execute(
+        "SELECT is_posted FROM subcontract_acceptances WHERE id = ? AND marked_for_deletion = 0",
+        (doc_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Subcontract acceptance not found")
+    if row["is_posted"]:
+        raise HTTPException(status_code=400, detail="Cannot delete a posted document. Unpost it first.")
     connection.execute(
         "UPDATE subcontract_acceptances SET marked_for_deletion = 1 WHERE id = ?",
         (doc_id,),
     )
+    _audit_log(connection, action="delete", resource_type="subcontract_acceptance",
+               resource_id=doc_id, details=f"Subcontract acceptance marked for deletion: #{doc_id}",
+               actor=actor)
     connection.commit()
 
 
 def restore_subcontract_acceptance(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
+    row = connection.execute(
+        "SELECT id FROM subcontract_acceptances WHERE id = ? AND marked_for_deletion = 1",
+        (doc_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Deleted subcontract acceptance not found")
     connection.execute(
         "UPDATE subcontract_acceptances SET marked_for_deletion = 0 WHERE id = ?",
         (doc_id,),
     )
+    _audit_log(connection, action="restore", resource_type="subcontract_acceptance",
+               resource_id=doc_id, details=f"Subcontract acceptance restored: #{doc_id}",
+               actor=actor)
     connection.commit()
 
 
 def post_subcontract_acceptance(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
     from api.services import _ensure_cost_elements_exist, _get_cost_element_id
 
@@ -830,12 +908,13 @@ def post_subcontract_acceptance(
         "UPDATE subcontract_acceptances SET is_posted = 1, posted_at = ? WHERE id = ?",
         (_now_iso(), doc_id),
     )
-    _audit_log(connection, action="post", resource_type="subcontract_acceptance", resource_id=doc_id)
+    _audit_log(connection, action="post", resource_type="subcontract_acceptance", resource_id=doc_id,
+               actor=actor)
     connection.commit()
 
 
 def unpost_subcontract_acceptance(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
     doc = get_subcontract_acceptance(connection, doc_id)
     if not doc["is_posted"]:
@@ -848,7 +927,8 @@ def unpost_subcontract_acceptance(
         "UPDATE subcontract_acceptances SET is_posted = 0, posted_at = NULL WHERE id = ?",
         (doc_id,),
     )
-    _audit_log(connection, action="unpost", resource_type="subcontract_acceptance", resource_id=doc_id)
+    _audit_log(connection, action="unpost", resource_type="subcontract_acceptance", resource_id=doc_id,
+               actor=actor)
     connection.commit()
 
 
@@ -981,22 +1061,42 @@ def save_overhead_expense(
 
 
 def delete_overhead_expense(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
+    row = connection.execute(
+        "SELECT is_distributed FROM overhead_expenses WHERE id = ? AND marked_for_deletion = 0",
+        (doc_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Overhead expense not found")
+    if row["is_distributed"]:
+        raise HTTPException(status_code=400, detail="Cannot delete a distributed overhead document")
     connection.execute(
         "UPDATE overhead_expenses SET marked_for_deletion = 1 WHERE id = ?",
         (doc_id,),
     )
+    _audit_log(connection, action="delete", resource_type="overhead_expense",
+               resource_id=doc_id, details=f"Overhead expense marked for deletion: #{doc_id}",
+               actor=actor)
     connection.commit()
 
 
 def restore_overhead_expense(
-    connection: sqlite3.Connection, doc_id: int
+    connection: sqlite3.Connection, doc_id: int, *, actor: UserInfo | None = None
 ) -> None:
+    row = connection.execute(
+        "SELECT id FROM overhead_expenses WHERE id = ? AND marked_for_deletion = 1",
+        (doc_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Deleted overhead expense not found")
     connection.execute(
         "UPDATE overhead_expenses SET marked_for_deletion = 0 WHERE id = ?",
         (doc_id,),
     )
+    _audit_log(connection, action="restore", resource_type="overhead_expense",
+               resource_id=doc_id, details=f"Overhead expense restored: #{doc_id}",
+               actor=actor)
     connection.commit()
 
 
@@ -1008,6 +1108,8 @@ def distribute_overhead(
     period: str,
     allocation_base_id: int,
     object_id: int = 0,
+    *,
+    actor: UserInfo | None = None,
 ) -> dict[str, Any]:
     from api.services import _ensure_cost_elements_exist, _get_cost_element_id
 
@@ -1132,7 +1234,8 @@ def distribute_overhead(
             (period,),
         )
     _audit_log(connection, action="distribute", resource_type="overhead", resource_id=0,
-               details=f"Overhead distributed for {period}: base={base_row['name']}, total={round(total, 2)}, records={record_count}")
+               details=f"Overhead distributed for {period}: base={base_row['name']}, total={round(total, 2)}, records={record_count}",
+               actor=actor)
     connection.commit()
 
     return {
@@ -1144,7 +1247,7 @@ def distribute_overhead(
 
 
 def cancel_overhead_distribution(
-    connection: sqlite3.Connection, period: str
+    connection: sqlite3.Connection, period: str, *, actor: UserInfo | None = None
 ) -> dict[str, Any]:
     row = connection.execute(
         "SELECT COUNT(*) FROM overhead_distribution WHERE period = ?", (period,)
@@ -1160,7 +1263,7 @@ def cancel_overhead_distribution(
         (period,),
     )
     _audit_log(connection, action="cancel_distribution", resource_type="overhead", resource_id=0,
-               details=f"Overhead distribution cancelled for {period}")
+               details=f"Overhead distribution cancelled for {period}", actor=actor)
     connection.commit()
     return {"period": period, "cancelled": True}
 
@@ -1267,17 +1370,47 @@ def save_cost_calculation(
 
 
 def delete_cost_calculation(
-    connection: sqlite3.Connection, calc_id: int
+    connection: sqlite3.Connection, calc_id: int, *, actor: UserInfo | None = None
 ) -> None:
+    row = connection.execute(
+        "SELECT status FROM cost_calculations WHERE id = ? AND marked_for_deletion = 0",
+        (calc_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Cost calculation not found")
+    if row["status"] == "posted":
+        raise HTTPException(status_code=400, detail="Cannot delete a posted calculation")
     connection.execute(
         "UPDATE cost_calculations SET marked_for_deletion = 1 WHERE id = ?",
         (calc_id,),
     )
+    _audit_log(connection, action="delete", resource_type="cost_calculation",
+               resource_id=calc_id, details=f"Cost calculation marked for deletion: #{calc_id}",
+               actor=actor)
+    connection.commit()
+
+
+def restore_cost_calculation(
+    connection: sqlite3.Connection, calc_id: int, *, actor: UserInfo | None = None
+) -> None:
+    row = connection.execute(
+        "SELECT id FROM cost_calculations WHERE id = ? AND marked_for_deletion = 1",
+        (calc_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Deleted cost calculation not found")
+    connection.execute(
+        "UPDATE cost_calculations SET marked_for_deletion = 0 WHERE id = ?",
+        (calc_id,),
+    )
+    _audit_log(connection, action="restore", resource_type="cost_calculation",
+               resource_id=calc_id, details=f"Cost calculation restored: #{calc_id}",
+               actor=actor)
     connection.commit()
 
 
 def calculate_cost(
-    connection: sqlite3.Connection, calc_id: int
+    connection: sqlite3.Connection, calc_id: int, *, actor: UserInfo | None = None
 ) -> dict[str, Any]:
     calc = get_cost_calculation(connection, calc_id)
     if calc["status"] == "posted":
@@ -1339,6 +1472,108 @@ def calculate_cost(
         (row["object_id"], row["contract_id"], row["work_id"]): float(row["planned_total"]) for row in planned_rows
     }
 
+    # Completed quantity is a work-execution measure, not the sum of quantities
+    # from cost movements (hours, kilograms, machine-hours, etc.). Resolve its
+    # contract through the estimate recorded by the execution register.
+    execution_object_filter = "AND wer.object_id = ?" if object_id != 0 else ""
+    completed_rows = connection.execute(
+        f"""SELECT COALESCE(wer.object_id, 0) AS object_id,
+                   COALESCE(e.contract_id, 0) AS contract_id,
+                   wer.work_id,
+                   COALESCE(SUM(wer.quantity_income - wer.quantity_expense), 0) AS completed_qty
+            FROM work_execution_register wer
+            LEFT JOIN estimates e ON e.id = wer.estimate_id
+            WHERE SUBSTR(wer.period, 1, 7) = ?
+              AND COALESCE(wer.is_deleted, 0) = 0
+              {execution_object_filter}
+            GROUP BY COALESCE(wer.object_id, 0), COALESCE(e.contract_id, 0), wer.work_id""",
+        (period,) + obj_params,
+    ).fetchall()
+    completed_map = {
+        (row["object_id"], row["contract_id"], row["work_id"]): float(row["completed_qty"])
+        for row in completed_rows
+    }
+
+    # Contract revenue comes from posted estimates linked through contract_id.
+    # Repeated lines of one work use a quantity-weighted contractual rate.
+    estimate_object_filter = "AND e.object_id = ?" if object_id != 0 else ""
+    estimate_rows = connection.execute(
+        f"""SELECT COALESCE(e.object_id, 0) AS object_id,
+                   COALESCE(e.contract_id, 0) AS contract_id,
+                   el.work_id,
+                   COALESCE(SUM(el.quantity), 0) AS estimate_qty,
+                   COALESCE(SUM(
+                       CASE
+                           WHEN COALESCE(el.sum, 0) <> 0 THEN el.sum
+                           ELSE COALESCE(el.quantity, 0) * COALESCE(el.price, 0)
+                       END
+                   ), 0) AS estimate_value,
+                   MIN(CASE WHEN el.quantity > 0 THEN
+                       (CASE WHEN COALESCE(el.sum, 0) <> 0 THEN el.sum
+                             ELSE el.quantity * COALESCE(el.price, 0) END) / el.quantity
+                   END) AS min_rate,
+                   MAX(CASE WHEN el.quantity > 0 THEN
+                       (CASE WHEN COALESCE(el.sum, 0) <> 0 THEN el.sum
+                             ELSE el.quantity * COALESCE(el.price, 0) END) / el.quantity
+                   END) AS max_rate
+            FROM estimates e
+            JOIN estimate_lines el ON el.estimate_id = e.id
+            WHERE e.is_posted = 1
+              AND e.marked_for_deletion = 0
+              AND COALESCE(e.is_deleted, 0) = 0
+              AND COALESCE(el.marked_for_deletion, 0) = 0
+              AND COALESCE(el.is_deleted, 0) = 0
+              AND COALESCE(el.is_group, 0) = 0
+              AND e.contract_id IS NOT NULL
+              AND el.work_id IS NOT NULL
+              {estimate_object_filter}
+            GROUP BY COALESCE(e.object_id, 0), COALESCE(e.contract_id, 0), el.work_id""",
+        obj_params,
+    ).fetchall()
+    contract_rate_map: dict[tuple[int, int, int | None], float] = {}
+    warnings: list[str] = []
+
+    # Timesheet labour has no work reference on its lines, so it posts at object
+    # level with work_id=0. Until a work source/distribution rule is decided
+    # (DEVELOPMENT_PLAN.md P1 п.3), surface it instead of hiding a phantom row.
+    unattributed_labor = connection.execute(
+        f"""SELECT COALESCE(object_id, 0) AS object_id,
+                   COALESCE(SUM(amount), 0) AS labor_amount
+            FROM actual_costs
+            WHERE period = ?
+              AND registrar_type = 'Timesheet'
+              AND COALESCE(work_id, 0) = 0
+              {obj_filter}
+            GROUP BY COALESCE(object_id, 0)""",
+        (period,) + obj_params,
+    ).fetchall()
+    for labor_row in unattributed_labor:
+        if float(labor_row["labor_amount"]):
+            warnings.append(
+                "Timesheet labor is not attributed to works (work_id=0) for "
+                f"object={labor_row['object_id']}, amount={round(float(labor_row['labor_amount']), 2)}"
+            )
+
+    for estimate_row in estimate_rows:
+        key = (
+            int(estimate_row["object_id"]),
+            int(estimate_row["contract_id"]),
+            estimate_row["work_id"],
+        )
+        estimate_qty = float(estimate_row["estimate_qty"] or 0)
+        if estimate_qty <= 0:
+            warnings.append(
+                f"Estimate quantity is zero for object={key[0]}, contract={key[1]}, work={key[2]}"
+            )
+            continue
+        contract_rate_map[key] = float(estimate_row["estimate_value"] or 0) / estimate_qty
+        min_rate = estimate_row["min_rate"]
+        max_rate = estimate_row["max_rate"]
+        if min_rate is not None and max_rate is not None and abs(float(max_rate) - float(min_rate)) > 0.005:
+            warnings.append(
+                f"Multiple estimate rates were weighted for object={key[0]}, contract={key[1]}, work={key[2]}"
+            )
+
     record_count = 0
     for row in results:
         work_id = row["work_id"]
@@ -1348,10 +1583,15 @@ def calculate_cost(
         overhead = overhead_map.get((row_obj_id, row_contract_id, work_id), 0.0)
         actual_cost = actual_direct + overhead
         planned_cost = planned_map.get((row_obj_id, row_contract_id, work_id), 0.0)
-        completed_qty = float(row["completed_qty"])
+        dimension_key = (row_obj_id, row_contract_id, work_id)
+        completed_qty = completed_map.get(dimension_key, 0.0)
         deviation = round(actual_cost - planned_cost, 2)
-        # Contract value = planned_cost (default; can be overridden)
-        contract_value = planned_cost
+        contract_rate = contract_rate_map.get(dimension_key)
+        contract_value = round(completed_qty * contract_rate, 2) if contract_rate is not None else 0.0
+        if completed_qty and contract_rate is None:
+            warnings.append(
+                f"No posted estimate rate for object={row_obj_id}, contract={row_contract_id}, work={work_id}"
+            )
         profit = round(contract_value - actual_cost, 2)
 
         connection.execute(
@@ -1371,13 +1611,19 @@ def calculate_cost(
         "UPDATE cost_calculations SET status = 'calculated' WHERE id = ?", (calc_id,)
     )
     _audit_log(connection, action="calculate", resource_type="cost_calculation", resource_id=calc_id,
-               details=f"Cost calculation executed: period={period}, object_id={object_id}, records={record_count}")
+               details=f"Cost calculation executed: period={period}, object_id={object_id}, records={record_count}",
+               actor=actor)
     connection.commit()
-    return {"calculation_id": calc_id, "status": "calculated", "record_count": record_count}
+    return {
+        "calculation_id": calc_id,
+        "status": "calculated",
+        "record_count": record_count,
+        "warnings": warnings,
+    }
 
 
 def post_cost_calculation(
-    connection: sqlite3.Connection, calc_id: int
+    connection: sqlite3.Connection, calc_id: int, *, actor: UserInfo | None = None
 ) -> None:
     calc = get_cost_calculation(connection, calc_id)
     if calc["status"] != "calculated":
@@ -1386,12 +1632,12 @@ def post_cost_calculation(
         "UPDATE cost_calculations SET status = 'posted' WHERE id = ?", (calc_id,)
     )
     _audit_log(connection, action="post", resource_type="cost_calculation", resource_id=calc_id,
-               details=f"Cost calculation posted: period={calc['period']}")
+               details=f"Cost calculation posted: period={calc['period']}", actor=actor)
     connection.commit()
 
 
 def unpost_cost_calculation(
-    connection: sqlite3.Connection, calc_id: int
+    connection: sqlite3.Connection, calc_id: int, *, actor: UserInfo | None = None
 ) -> None:
     calc = get_cost_calculation(connection, calc_id)
     if calc["status"] != "posted":
@@ -1403,7 +1649,7 @@ def unpost_cost_calculation(
         "DELETE FROM completed_works_cost WHERE calculation_id = ?", (calc_id,)
     )
     _audit_log(connection, action="unpost", resource_type="cost_calculation", resource_id=calc_id,
-               details=f"Cost calculation unposted: period={calc['period']}")
+               details=f"Cost calculation unposted: period={calc['period']}", actor=actor)
     connection.commit()
 
 
@@ -1476,12 +1722,28 @@ def get_cost_card(
     ).fetchall()
     planned_map = {row["id"]: float(row["planned_amount"]) for row in planned_by_element}
 
+    # R-REP1: distributed overhead is an actual cost of the period, but it lives in
+    # overhead_distribution, not actual_costs. Attach it to the predefined 'overhead'
+    # element so the card totals equal calculation/profitability (completed_works_cost
+    # already includes overhead in actual_cost).
+    try:
+        distributed_overhead = float(connection.execute(
+            f"""SELECT COALESCE(SUM(od.amount), 0) AS overhead_amount
+                FROM overhead_distribution od
+                WHERE 1=1{extra_filter.replace('x.', 'od.')}""",
+            params,
+        ).fetchone()["overhead_amount"])
+    except sqlite3.OperationalError:
+        distributed_overhead = 0.0
+
     element_summaries = []
     total_planned = 0.0
     total_actual = 0.0
     for el in elements:
         planned = planned_map.get(el["id"], 0.0)
         actual = float(el["actual_amount"])
+        if el["kind"] == "overhead":
+            actual += distributed_overhead
         total_planned += planned
         total_actual += actual
         element_summaries.append({
@@ -1563,8 +1825,9 @@ def get_turnover_balance(
     obj_filter = "AND object_id = ?" if object_id else ""
     obj_params = (object_id,) if object_id else ()
 
+    # A deletion mark prevents future selection but must not rewrite history.
     elements = connection.execute(
-        "SELECT id, name, kind FROM cost_elements WHERE marked_for_deletion = 0 ORDER BY id"
+        "SELECT id, name, kind FROM cost_elements ORDER BY id"
     ).fetchall()
 
     rows = []
@@ -1633,8 +1896,14 @@ def get_deviations(
             FROM completed_works_cost cwc
             LEFT JOIN works w ON w.id = cwc.work_id
             LEFT JOIN cost_elements ce ON ce.id = (
-                SELECT cost_element_id FROM actual_costs
-                WHERE work_id = cwc.work_id AND period = cwc.period
+                SELECT ac.cost_element_id
+                FROM actual_costs ac
+                WHERE ac.work_id = cwc.work_id
+                  AND ac.period = cwc.period
+                  AND COALESCE(ac.object_id, 0) = COALESCE(cwc.object_id, 0)
+                  AND COALESCE(ac.contract_id, 0) = COALESCE(cwc.contract_id, 0)
+                GROUP BY ac.cost_element_id
+                ORDER BY ABS(SUM(ac.amount)) DESC, ac.cost_element_id
                 LIMIT 1
             )
             WHERE cwc.period = ? {obj_filter}

@@ -6,7 +6,7 @@
         <div class="metric-value">{{ summary?.documents.estimates ?? '—' }}</div>
       </article>
       <article class="panel metric-card">
-        <RouterLink class="metric-label metric-label-link" to="/documents/daily-reports">Ежедневные отчеты</RouterLink>
+        <RouterLink class="metric-label metric-label-link" to="/documents/daily-reports">Отчёты прораба</RouterLink>
         <div class="metric-value">{{ summary?.documents.daily_reports ?? '—' }}</div>
       </article>
       <article class="panel metric-card">

@@ -15,7 +15,7 @@ from api.db.dialect import table_columns, table_exists
 from api.security import hash_password
 
 
-SYNC_SCHEMA_VERSION = "2026-07-tmc-settlements-v1"
+SYNC_SCHEMA_VERSION = "2026-09-warehouse-transfers-v2"
 SYNC_OPERATIONS = {"INSERT", "UPDATE", "DELETE"}
 
 UUID_READY_TABLES = (
@@ -45,6 +45,9 @@ UUID_READY_TABLES = (
     "goods_receipt_lines",
     "goods_issues",
     "goods_issue_lines",
+    "goods_transfers",
+    "goods_transfer_lines",
+    "warehouses",
 )
 
 REFERENCE_TABLES = {
@@ -54,6 +57,7 @@ REFERENCE_TABLES = {
     "persons",
     "organizations",
     "contracts",
+    "warehouses",
 }
 
 SCHEMA_TABLES_SQL = """
@@ -190,13 +194,16 @@ CREATE TABLE IF NOT EXISTS materials (
     name TEXT NOT NULL,
     unit_id INTEGER,
     price REAL NOT NULL DEFAULT 0,
+    parent_id INTEGER,
+    is_group INTEGER NOT NULL DEFAULT 0,
     marked_for_deletion INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     uuid TEXT NOT NULL UNIQUE,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_deleted INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (unit_id) REFERENCES units(id)
+    FOREIGN KEY (unit_id) REFERENCES units(id),
+    FOREIGN KEY (parent_id) REFERENCES materials(id)
 );
 
 CREATE TABLE IF NOT EXISTS work_specifications (
@@ -523,6 +530,7 @@ CREATE TABLE IF NOT EXISTS payment_schedule_lines (
 
 CREATE TABLE IF NOT EXISTS payment_transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    allow_advance INTEGER NOT NULL DEFAULT 0,
     number TEXT NOT NULL DEFAULT '',
     date TEXT NOT NULL,
     direction TEXT NOT NULL DEFAULT 'outgoing',
@@ -578,11 +586,32 @@ CREATE TABLE IF NOT EXISTS payment_schedule_register (
     FOREIGN KEY (linked_line_id) REFERENCES payment_schedule_lines(id)
 );
 
+CREATE TABLE IF NOT EXISTS warehouses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL,
+    organization_id INTEGER NOT NULL,
+    default_object_id INTEGER,
+    responsible_id INTEGER,
+    address TEXT,
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    modified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    uuid TEXT NOT NULL UNIQUE,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (default_object_id) REFERENCES objects(id),
+    FOREIGN KEY (responsible_id) REFERENCES persons(id)
+);
+
 CREATE TABLE IF NOT EXISTS goods_receipts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     number TEXT NOT NULL DEFAULT '',
     date TEXT NOT NULL,
     organization_id INTEGER NOT NULL,
+    warehouse TEXT NOT NULL DEFAULT '',
+    warehouse_id INTEGER,
     counterparty_id INTEGER,
     contract_id INTEGER,
     object_id INTEGER,
@@ -602,6 +631,7 @@ CREATE TABLE IF NOT EXISTS goods_receipts (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_deleted INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
     FOREIGN KEY (counterparty_id) REFERENCES counterparties(id),
     FOREIGN KEY (contract_id) REFERENCES contracts(id),
     FOREIGN KEY (object_id) REFERENCES objects(id),
@@ -643,6 +673,8 @@ CREATE TABLE IF NOT EXISTS goods_issues (
     number TEXT NOT NULL DEFAULT '',
     date TEXT NOT NULL,
     organization_id INTEGER NOT NULL,
+    warehouse TEXT NOT NULL DEFAULT '',
+    warehouse_id INTEGER,
     counterparty_id INTEGER,
     contract_id INTEGER,
     object_id INTEGER,
@@ -662,6 +694,7 @@ CREATE TABLE IF NOT EXISTS goods_issues (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_deleted INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
     FOREIGN KEY (counterparty_id) REFERENCES counterparties(id),
     FOREIGN KEY (contract_id) REFERENCES contracts(id),
     FOREIGN KEY (object_id) REFERENCES objects(id),
@@ -683,6 +716,7 @@ CREATE TABLE IF NOT EXISTS goods_issue_lines (
     vat_amount REAL NOT NULL DEFAULT 0,
     sum_without_vat REAL NOT NULL DEFAULT 0,
     sum_with_vat REAL NOT NULL DEFAULT 0,
+    inventory_cost REAL,
     object_id INTEGER,
     drawing_code TEXT,
     note TEXT,
@@ -698,6 +732,160 @@ CREATE TABLE IF NOT EXISTS goods_issue_lines (
     FOREIGN KEY (object_id) REFERENCES objects(id)
 );
 
+CREATE TABLE IF NOT EXISTS goods_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    number TEXT NOT NULL DEFAULT '',
+    date TEXT NOT NULL,
+    organization_id INTEGER NOT NULL,
+    source_warehouse_id INTEGER NOT NULL,
+    destination_warehouse_id INTEGER NOT NULL,
+    source_object_id INTEGER,
+    destination_object_id INTEGER,
+    responsible_id INTEGER,
+    description TEXT,
+    is_posted INTEGER NOT NULL DEFAULT 0,
+    posted_at TEXT,
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    modified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    uuid TEXT NOT NULL UNIQUE,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (source_warehouse_id) REFERENCES warehouses(id),
+    FOREIGN KEY (destination_warehouse_id) REFERENCES warehouses(id),
+    FOREIGN KEY (source_object_id) REFERENCES objects(id),
+    FOREIGN KEY (destination_object_id) REFERENCES objects(id),
+    FOREIGN KEY (responsible_id) REFERENCES persons(id)
+);
+
+CREATE TABLE IF NOT EXISTS goods_transfer_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transfer_id INTEGER NOT NULL,
+    line_number INTEGER NOT NULL,
+    material_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    unit_id INTEGER NOT NULL,
+    quantity REAL NOT NULL,
+    unit_cost REAL NOT NULL DEFAULT 0,
+    sum REAL NOT NULL DEFAULT 0,
+    note TEXT,
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    modified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    uuid TEXT NOT NULL UNIQUE,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (transfer_id) REFERENCES goods_transfers(id) ON DELETE CASCADE,
+    FOREIGN KEY (material_id) REFERENCES materials(id),
+    FOREIGN KEY (unit_id) REFERENCES units(id)
+);
+
+CREATE TABLE IF NOT EXISTS goods_price_adjustments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL CHECK(kind IN ('sale', 'purchase')),
+    source_id INTEGER NOT NULL,
+    number TEXT NOT NULL,
+    date TEXT NOT NULL,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id),
+    counterparty_id INTEGER REFERENCES counterparties(id),
+    contract_id INTEGER REFERENCES contracts(id),
+    warehouse_id INTEGER REFERENCES warehouses(id),
+    object_id INTEGER REFERENCES objects(id),
+    estimate_id INTEGER REFERENCES estimates(id),
+    description TEXT,
+    delta_without_vat REAL NOT NULL DEFAULT 0,
+    delta_vat REAL NOT NULL DEFAULT 0,
+    delta_with_vat REAL NOT NULL DEFAULT 0,
+    is_posted INTEGER NOT NULL DEFAULT 0,
+    posted_at TEXT,
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    uuid TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    modified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_price_adjustments_source ON goods_price_adjustments(kind, source_id, is_posted);
+CREATE TABLE IF NOT EXISTS goods_price_adjustment_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    adjustment_id INTEGER NOT NULL REFERENCES goods_price_adjustments(id) ON DELETE CASCADE,
+    source_line_id INTEGER NOT NULL,
+    previous_line_id INTEGER REFERENCES goods_price_adjustment_lines(id),
+    material_id INTEGER NOT NULL REFERENCES materials(id),
+    unit_id INTEGER NOT NULL REFERENCES units(id),
+    object_id INTEGER REFERENCES objects(id),
+    line_number INTEGER NOT NULL,
+    quantity REAL NOT NULL,
+    old_price REAL NOT NULL,
+    new_price REAL NOT NULL,
+    vat_rate REAL NOT NULL,
+    old_sum_without_vat REAL NOT NULL,
+    old_vat_amount REAL NOT NULL,
+    new_sum_without_vat REAL NOT NULL,
+    new_vat_amount REAL NOT NULL,
+    delta_without_vat REAL NOT NULL,
+    delta_vat REAL NOT NULL,
+    delta_with_vat REAL NOT NULL,
+    UNIQUE(adjustment_id, source_line_id)
+);
+
+CREATE TABLE IF NOT EXISTS goods_returns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL CHECK(kind IN ('customer', 'supplier')),
+    source_id INTEGER NOT NULL,
+    number TEXT NOT NULL,
+    date TEXT NOT NULL,
+    organization_id INTEGER NOT NULL REFERENCES organizations(id),
+    counterparty_id INTEGER REFERENCES counterparties(id),
+    contract_id INTEGER REFERENCES contracts(id),
+    warehouse_id INTEGER REFERENCES warehouses(id),
+    object_id INTEGER REFERENCES objects(id),
+    estimate_id INTEGER REFERENCES estimates(id),
+    description TEXT,
+    sum_without_vat REAL NOT NULL DEFAULT 0,
+    vat_amount REAL NOT NULL DEFAULT 0,
+    sum_with_vat REAL NOT NULL DEFAULT 0,
+    inventory_cost REAL NOT NULL DEFAULT 0,
+    is_posted INTEGER NOT NULL DEFAULT 0,
+    posted_at TEXT,
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    modified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    uuid TEXT NOT NULL UNIQUE,
+    is_deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_returns_source ON goods_returns(kind, source_id, is_posted);
+CREATE TABLE IF NOT EXISTS goods_return_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    return_id INTEGER NOT NULL REFERENCES goods_returns(id) ON DELETE CASCADE,
+    source_line_id INTEGER NOT NULL,
+    line_number INTEGER NOT NULL,
+    quantity REAL NOT NULL,
+    sum_without_vat REAL NOT NULL DEFAULT 0,
+    vat_amount REAL NOT NULL DEFAULT 0,
+    sum_with_vat REAL NOT NULL DEFAULT 0,
+    inventory_cost REAL NOT NULL DEFAULT 0,
+    UNIQUE(return_id, source_line_id)
+);
+CREATE TABLE IF NOT EXISTS goods_return_refunds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    return_id INTEGER NOT NULL REFERENCES goods_returns(id),
+    number TEXT NOT NULL,
+    date TEXT NOT NULL,
+    amount REAL NOT NULL,
+    description TEXT,
+    is_posted INTEGER NOT NULL DEFAULT 0,
+    posted_at TEXT,
+    marked_for_deletion INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    modified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    uuid TEXT NOT NULL UNIQUE,
+    is_deleted INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS inventory_register (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     recorder_type TEXT NOT NULL,
@@ -705,6 +893,8 @@ CREATE TABLE IF NOT EXISTS inventory_register (
     line_number INTEGER NOT NULL,
     period TEXT NOT NULL,
     material_id INTEGER,
+    warehouse_id INTEGER,
+    movement_side TEXT,
     object_id INTEGER,
     unit_id INTEGER,
     quantity_income REAL NOT NULL DEFAULT 0,
@@ -716,6 +906,7 @@ CREATE TABLE IF NOT EXISTS inventory_register (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_deleted INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (material_id) REFERENCES materials(id),
+    FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
     FOREIGN KEY (object_id) REFERENCES objects(id),
     FOREIGN KEY (unit_id) REFERENCES units(id)
 );
@@ -845,7 +1036,8 @@ CREATE TABLE IF NOT EXISTS material_consumptions (
     is_posted INTEGER NOT NULL DEFAULT 0,
     posted_at TEXT,
     marked_for_deletion INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT
+    created_at TEXT,
+    modified_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS material_consumption_lines (
@@ -873,7 +1065,8 @@ CREATE TABLE IF NOT EXISTS machinery_usage_reports (
     is_posted INTEGER NOT NULL DEFAULT 0,
     posted_at TEXT,
     marked_for_deletion INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT
+    created_at TEXT,
+    modified_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS machinery_usage_lines (
@@ -898,7 +1091,8 @@ CREATE TABLE IF NOT EXISTS subcontract_acceptances (
     is_posted INTEGER NOT NULL DEFAULT 0,
     posted_at TEXT,
     marked_for_deletion INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT
+    created_at TEXT,
+    modified_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS subcontract_acceptance_lines (
@@ -921,7 +1115,8 @@ CREATE TABLE IF NOT EXISTS overhead_expenses (
     period TEXT NOT NULL DEFAULT '',
     is_distributed INTEGER NOT NULL DEFAULT 0,
     marked_for_deletion INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT
+    created_at TEXT,
+    modified_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS overhead_expense_lines (
@@ -1042,6 +1237,7 @@ CREATE INDEX IF NOT EXISTS idx_units_name ON units(name);
 CREATE INDEX IF NOT EXISTS idx_units_uuid ON units(uuid);
 CREATE INDEX IF NOT EXISTS idx_materials_name ON materials(name);
 CREATE INDEX IF NOT EXISTS idx_materials_code ON materials(code);
+CREATE INDEX IF NOT EXISTS idx_materials_parent_id ON materials(parent_id);
 CREATE INDEX IF NOT EXISTS idx_materials_uuid ON materials(uuid);
 CREATE INDEX IF NOT EXISTS idx_work_specifications_work_id ON work_specifications(work_id);
 CREATE INDEX IF NOT EXISTS idx_work_specifications_component_type ON work_specifications(component_type);
@@ -1070,15 +1266,28 @@ CREATE INDEX IF NOT EXISTS idx_payment_schedule_register_linked_line ON payment_
 CREATE INDEX IF NOT EXISTS idx_contracts_organization_id ON contracts(organization_id);
 CREATE INDEX IF NOT EXISTS idx_contracts_org_cp ON contracts(organization_id, counterparty_id);
 CREATE INDEX IF NOT EXISTS idx_goods_receipts_lookup ON goods_receipts(date, organization_id, counterparty_id, contract_id, object_id);
+CREATE INDEX IF NOT EXISTS idx_goods_receipts_warehouse ON goods_receipts(warehouse_id);
 CREATE INDEX IF NOT EXISTS idx_goods_receipts_uuid ON goods_receipts(uuid);
 CREATE INDEX IF NOT EXISTS idx_goods_receipt_lines_receipt_id ON goods_receipt_lines(receipt_id);
 CREATE INDEX IF NOT EXISTS idx_goods_receipt_lines_uuid ON goods_receipt_lines(uuid);
 CREATE INDEX IF NOT EXISTS idx_goods_issues_lookup ON goods_issues(date, organization_id, counterparty_id, contract_id, object_id);
+CREATE INDEX IF NOT EXISTS idx_goods_issues_warehouse ON goods_issues(warehouse_id);
 CREATE INDEX IF NOT EXISTS idx_goods_issues_uuid ON goods_issues(uuid);
 CREATE INDEX IF NOT EXISTS idx_goods_issue_lines_issue_id ON goods_issue_lines(issue_id);
 CREATE INDEX IF NOT EXISTS idx_goods_issue_lines_uuid ON goods_issue_lines(uuid);
+CREATE INDEX IF NOT EXISTS idx_goods_transfers_date ON goods_transfers(date);
+CREATE INDEX IF NOT EXISTS idx_goods_transfers_source ON goods_transfers(source_warehouse_id, date);
+CREATE INDEX IF NOT EXISTS idx_goods_transfers_destination ON goods_transfers(destination_warehouse_id, date);
+CREATE INDEX IF NOT EXISTS idx_goods_transfers_uuid ON goods_transfers(uuid);
+CREATE INDEX IF NOT EXISTS idx_goods_transfer_lines_transfer ON goods_transfer_lines(transfer_id, line_number);
+CREATE INDEX IF NOT EXISTS idx_goods_transfer_lines_uuid ON goods_transfer_lines(uuid);
 CREATE INDEX IF NOT EXISTS idx_inventory_recorder ON inventory_register(recorder_type, recorder_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_dims ON inventory_register(period, material_id, object_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_warehouse ON inventory_register(warehouse_id, period, material_id, object_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_transfer_side ON inventory_register(recorder_type, recorder_id, line_number, movement_side) WHERE recorder_type = 'goods_transfer';
+CREATE INDEX IF NOT EXISTS idx_warehouses_uuid ON warehouses(uuid);
+CREATE INDEX IF NOT EXISTS idx_warehouses_organization_name ON warehouses(organization_id, name);
+CREATE INDEX IF NOT EXISTS idx_warehouses_organization_code ON warehouses(organization_id, code);
 CREATE INDEX IF NOT EXISTS idx_mutual_recorder ON mutual_settlements_register(recorder_type, recorder_id);
 CREATE INDEX IF NOT EXISTS idx_mutual_dims ON mutual_settlements_register(period, organization_id, counterparty_id, contract_id, direction);
 CREATE INDEX IF NOT EXISTS idx_sync_changes_entity ON sync_changes(entity_type, entity_uuid);
@@ -1318,9 +1527,88 @@ def _ensure_cost_contract_columns(connection: sqlite3.Connection) -> None:
         _ensure_column(connection, table_name, "contract_id", "INTEGER")
 
 
+def _ensure_warehouse_schema(connection: sqlite3.Connection) -> None:
+    """Backfill warehouse links without discarding the legacy text labels."""
+    if not _table_exists(connection, "warehouses"):
+        return
+    for table_name in ("goods_receipts", "goods_issues"):
+        if not _table_exists(connection, table_name):
+            continue
+        _ensure_column(connection, table_name, "warehouse", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(connection, table_name, "warehouse_id", "INTEGER")
+    if _table_exists(connection, "goods_issue_lines"):
+        _ensure_column(connection, "goods_issue_lines", "inventory_cost", "REAL")
+    if _table_exists(connection, "inventory_register"):
+        _ensure_column(connection, "inventory_register", "warehouse_id", "INTEGER")
+        _ensure_column(connection, "inventory_register", "movement_side", "TEXT")
+
+    for table_name in ("goods_receipts", "goods_issues"):
+        if not _table_exists(connection, table_name):
+            continue
+        rows = connection.execute(
+            f"SELECT id, organization_id, warehouse FROM {table_name} WHERE warehouse_id IS NULL"
+        ).fetchall()
+        for document in rows:
+            organization_id = int(document["organization_id"])
+            name = str(document["warehouse"] or "").strip() or "Основной склад"
+            warehouse = connection.execute(
+                "SELECT id FROM warehouses WHERE organization_id = ? AND name = ? ORDER BY id LIMIT 1",
+                (organization_id, name),
+            ).fetchone()
+            if warehouse is None:
+                stamp = utcnow_iso()
+                code = "MAIN" if name == "Основной склад" else ""
+                connection.execute(
+                    """INSERT INTO warehouses
+                       (code, name, organization_id, uuid, created_at, modified_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (code, name, organization_id, new_uuid(), stamp, stamp, stamp),
+                )
+                warehouse_id = last_insert_id(connection)
+            else:
+                warehouse_id = int(warehouse["id"])
+            connection.execute(
+                f"UPDATE {table_name} SET warehouse_id = ? WHERE id = ?",
+                (warehouse_id, document["id"]),
+            )
+
+    if _table_exists(connection, "inventory_register"):
+        for recorder_type, table_name in (
+            ("goods_receipt", "goods_receipts"),
+            ("goods_issue", "goods_issues"),
+        ):
+            connection.execute(
+                f"""UPDATE inventory_register
+                    SET warehouse_id = (
+                        SELECT d.warehouse_id FROM {table_name} d
+                        WHERE d.id = inventory_register.recorder_id
+                    )
+                    WHERE recorder_type = ? AND warehouse_id IS NULL""",
+                (recorder_type,),
+            )
+        unresolved = connection.execute(
+            """SELECT COUNT(*) FROM inventory_register
+               WHERE COALESCE(is_deleted, 0) = 0 AND warehouse_id IS NULL"""
+        ).fetchone()[0]
+        if unresolved:
+            print(f"Inventory migration: {unresolved} active movements have no warehouse")
+
 def ensure_runtime_schema(connection: sqlite3.Connection) -> None:
+    from api.trade_access import ensure_schema as ensure_access_schema
+    ensure_access_schema(connection, _ensure_column)
     for table_name in UUID_READY_TABLES:
         _ensure_sync_columns(connection, table_name)
+    # Legacy inventory tables need warehouse_id before the dimensions
+    # migration creates its index. Backfill also relies on the sync columns.
+    _ensure_warehouse_schema(connection)
+    from api.inventory_dimensions import ensure_schema
+    ensure_schema(connection, _ensure_column, _table_exists)
+    from api.opening_balance_services import ensure_schema as ensure_opening_schema
+    ensure_opening_schema(connection)
+    from api.purchase_services import ensure_schema as ensure_purchase_schema
+    ensure_purchase_schema(connection, _ensure_column)
+    from api.sales_services import ensure_schema as ensure_sales_schema
+    ensure_sales_schema(connection, _ensure_column)
     if _table_exists(connection, "persons"):
         _ensure_column(connection, "persons", "personnel_number", "TEXT")
         _ensure_column(connection, "persons", "hourly_rate", "REAL NOT NULL DEFAULT 0")
@@ -1333,6 +1621,17 @@ def ensure_runtime_schema(connection: sqlite3.Connection) -> None:
             SET specification_review_status = COALESCE(NULLIF(TRIM(specification_review_status), ''), 'ok')
             """
         )
+    if _table_exists(connection, "materials"):
+        _ensure_column(connection, "materials", "parent_id", "INTEGER")
+        _ensure_column(connection, "materials", "is_group", "INTEGER NOT NULL DEFAULT 0")
+    for table_name in (
+        "material_consumptions",
+        "machinery_usage_reports",
+        "subcontract_acceptances",
+        "overhead_expenses",
+    ):
+        if _table_exists(connection, table_name):
+            _ensure_column(connection, table_name, "modified_at", "TEXT")
     for table_name in ("estimate_lines", "daily_report_lines"):
         if _table_exists(connection, table_name) and "marked_for_deletion" not in _table_columns(connection, table_name):
             _ensure_column(connection, table_name, "marked_for_deletion", "INTEGER NOT NULL DEFAULT 0")
@@ -1364,6 +1663,8 @@ def ensure_runtime_schema(connection: sqlite3.Connection) -> None:
         _ensure_column(connection, "contracts", "payment_deferral_days", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(connection, "contracts", "agreement_date", "TEXT")
         _ensure_column(connection, "contracts", "valid_until", "TEXT")
+    if _table_exists(connection, "payment_transactions"):
+        _ensure_column(connection, "payment_transactions", "allow_advance", "INTEGER NOT NULL DEFAULT 0")
 
     _set_constant(connection, "schema.version", SYNC_SCHEMA_VERSION)
     _ensure_based_on_columns(connection)

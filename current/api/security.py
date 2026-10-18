@@ -20,9 +20,9 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, password_hash: str) -> bool:
     if not password_hash:
         return False
-    if password_hash.startswith("$pbkdf2-sha256$"):
-        return password_context.verify(plain_password, password_hash)
-    return plain_password == password_hash
+    if not password_hash.startswith("$pbkdf2-sha256$"):
+        return False
+    return password_context.verify(plain_password, password_hash)
 
 
 def create_access_token(

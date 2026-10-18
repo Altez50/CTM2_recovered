@@ -6,6 +6,7 @@ api.services (document -> posting -> register).
 """
 
 from __future__ import annotations
+from api.trade_access import add_scope, add_schedule_scope, require_contract, require_payment_links, require_schedule, rollback_on_error, organizations, require_posted_payment, add_payment_scope, add_cash_history_scope
 
 import sqlite3
 from datetime import date, datetime, timedelta
@@ -24,6 +25,7 @@ from api.goods_services import (
 from api.models.auth import UserInfo
 from api.models.common import Pagination
 from api.list_query import apply_quick_filters, order_by_clause
+from api.trade_settlement_rules import money, validate_contract, lock_settlement_contracts
 
 
 def _now_iso() -> str:
@@ -110,6 +112,7 @@ def list_payment_schedules(
             "contract_number": ("ct.number", "like"),
         },
     )
+    add_schedule_scope(connection, where_parts, params)
     where_sql = " AND ".join(where_parts)
     order = order_by_clause(
         sort_by, sort_order, {"id": "ps.id", "number": "ps.number", "date_from": "ps.date_from"}, "ps.date_from"
@@ -213,19 +216,20 @@ def get_payment_schedule(connection: sqlite3.Connection, schedule_id: int) -> di
     totals = _schedule_totals(connection, schedule_id)
     schedule["total_incoming"] = totals["incoming"]
     schedule["total_outgoing"] = totals["outgoing"]
+    require_schedule(connection, schedule)
     return schedule
 
 
 def _line_fact_amount(connection: sqlite3.Connection, line_id: int) -> float:
+    scope, params = ['psr.linked_line_id = ?', "psr.recorder_type = 'payment_transaction'", 'psr.is_deleted = 0'], [line_id]
+    add_cash_history_scope(connection, scope, params)
     row = connection.execute(
-        """
+        f"""
         SELECT COALESCE(SUM(fact_amount), 0) AS fact
-        FROM payment_schedule_register
-        WHERE linked_line_id = ?
-          AND recorder_type = 'payment_transaction'
-          AND COALESCE(is_deleted, 0) = 0
+        FROM payment_schedule_register psr
+        WHERE {' AND '.join(scope)}
         """,
-        (line_id,),
+        params,
     ).fetchone()
     return round(float(row["fact"] or 0), 2)
 
@@ -354,6 +358,7 @@ def _sync_schedule_lines(
         )
 
 
+@rollback_on_error
 def save_payment_schedule(
     connection: sqlite3.Connection,
     *,
@@ -363,6 +368,12 @@ def save_payment_schedule(
 ) -> dict[str, Any]:
     _require_write(user)
     lines = [dict(line) for line in payload.pop("lines", [])]
+    if schedule_id is not None:
+        connection.execute('UPDATE payment_schedules SET id = id WHERE id = ?', (schedule_id,))
+    # Keep ownership stable from the access check through the completed write.
+    lock_settlement_contracts(connection, payload.get('contract_id'),
+                              *(line.get('contract_id') for line in lines))
+    require_schedule(connection, {**payload, 'lines': lines})
     payload["date_from"] = str(payload["date_from"])
     payload["date_to"] = str(payload["date_to"])
     if not payload.get("number"):
@@ -416,12 +427,15 @@ def save_payment_schedule(
         entity_uuid=schedule_uuid,
         operation=sync_operation,
     )
+    result = get_payment_schedule(connection, schedule_id)
     connection.commit()
-    return get_payment_schedule(connection, schedule_id)
+    return result
 
 
+@rollback_on_error
 def delete_payment_schedule(connection: sqlite3.Connection, schedule_id: int, user: UserInfo) -> None:
     _require_write(user)
+    connection.execute("UPDATE payment_schedules SET id = id WHERE id = ?", (schedule_id,))
     schedule = get_payment_schedule(connection, schedule_id)
     if schedule["is_posted"]:
         raise HTTPException(status_code=400, detail="Posted schedule cannot be deleted")
@@ -448,8 +462,10 @@ def delete_payment_schedule(connection: sqlite3.Connection, schedule_id: int, us
 # ---------------------------------------------------------------------------
 
 
+@rollback_on_error
 def post_payment_schedule(connection: sqlite3.Connection, *, schedule_id: int, user: UserInfo) -> None:
     _require_admin(user)
+    connection.execute("UPDATE payment_schedules SET id = id WHERE id = ?", (schedule_id,))
     schedule = get_payment_schedule(connection, schedule_id)
     if schedule["is_posted"]:
         raise HTTPException(status_code=400, detail="Payment schedule is already posted")
@@ -503,8 +519,10 @@ def post_payment_schedule(connection: sqlite3.Connection, *, schedule_id: int, u
     connection.commit()
 
 
+@rollback_on_error
 def unpost_payment_schedule(connection: sqlite3.Connection, *, schedule_id: int, user: UserInfo) -> None:
     _require_admin(user)
+    connection.execute("UPDATE payment_schedules SET id = id WHERE id = ?", (schedule_id,))
     schedule = get_payment_schedule(connection, schedule_id)
     if not schedule["is_posted"]:
         raise HTTPException(status_code=400, detail="Payment schedule is not posted")
@@ -591,6 +609,7 @@ def list_payment_transactions(
             "counterparty_name": ("cp.name", "like"),
         },
     )
+    add_payment_scope(connection, where_parts, params)
     where_sql = " AND ".join(where_parts)
     order = order_by_clause(
         sort_by, sort_order, {"id": "pt.id", "number": "pt.number", "date": "pt.date"}, "pt.date"
@@ -641,7 +660,10 @@ def get_payment_transaction(connection: sqlite3.Connection, tx_id: int) -> dict[
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Payment transaction not found")
-    return _cast_flags(row_to_dict(row) or {}, "is_posted", "marked_for_deletion")
+    require_contract(connection, row["contract_id"])
+    require_posted_payment(connection, tx_id)
+    require_payment_links(connection, dict(row))
+    return _cast_flags(row_to_dict(row) or {}, "is_posted", "marked_for_deletion", "allow_advance")
 
 
 def _next_transaction_number(connection: sqlite3.Connection) -> str:
@@ -651,6 +673,7 @@ def _next_transaction_number(connection: sqlite3.Connection) -> str:
     return f"ПЛ-{int(row['cnt'] or 0) + 1:04d}"
 
 
+@rollback_on_error
 def save_payment_transaction(
     connection: sqlite3.Connection,
     *,
@@ -659,8 +682,16 @@ def save_payment_transaction(
     user: UserInfo,
 ) -> dict[str, Any]:
     _require_write(user)
+    if tx_id is not None:
+        connection.execute("UPDATE payment_transactions SET id = id WHERE id = ?", (tx_id,))
+    lock_settlement_contracts(connection, payload.get('contract_id'))
+    require_payment_links(connection, payload)
+    validate_contract(connection, contract_id=payload.get("contract_id"),
+                      counterparty_id=payload.get("counterparty_id"))
+    if payload.get("allow_advance") and not payload.get("contract_id"):
+        raise HTTPException(status_code=400, detail="Для аванса необходимо выбрать договор")
     payload["date"] = str(payload["date"])
-    payload["amount"] = round(float(payload.get("amount") or 0), 2)
+    payload["amount"] = float(money(payload.get("amount")))
     if not payload.get("number"):
         payload["number"] = _next_transaction_number(connection)
 
@@ -711,12 +742,15 @@ def save_payment_transaction(
         entity_uuid=tx_uuid,
         operation=sync_operation,
     )
+    result = get_payment_transaction(connection, tx_id)
     connection.commit()
-    return get_payment_transaction(connection, tx_id)
+    return result
 
 
+@rollback_on_error
 def delete_payment_transaction(connection: sqlite3.Connection, tx_id: int, user: UserInfo) -> None:
     _require_write(user)
+    connection.execute("UPDATE payment_transactions SET id = id WHERE id = ?", (tx_id,))
     tx = get_payment_transaction(connection, tx_id)
     if tx["is_posted"]:
         raise HTTPException(status_code=400, detail="Posted transaction cannot be deleted")
@@ -739,13 +773,21 @@ def delete_payment_transaction(connection: sqlite3.Connection, tx_id: int, user:
 # ---------------------------------------------------------------------------
 
 
+@rollback_on_error
 def post_payment_transaction(connection: sqlite3.Connection, *, tx_id: int, user: UserInfo) -> None:
     _require_admin(user)
+    connection.execute('UPDATE payment_transactions SET id = id WHERE id = ?', (tx_id,))
     tx = get_payment_transaction(connection, tx_id)
     if tx["is_posted"]:
         raise HTTPException(status_code=400, detail="Payment transaction is already posted")
 
-    # Invariant: payments cannot exceed open accruals for the same direction/contract.
+    lock_settlement_contracts(connection, tx.get('contract_id'))
+    # Owners/links can change while a request waits for a lock.
+    tx = get_payment_transaction(connection, tx_id)
+    contract = validate_contract(connection, contract_id=tx.get("contract_id"),
+                                 counterparty_id=tx.get("counterparty_id"))
+    if tx.get("allow_advance") and (contract is None or contract["organization_id"] is None):
+        raise HTTPException(status_code=400, detail="Для аванса необходим договор с организацией")
     _assert_payment_within_accruals(connection, tx)
 
     connection.execute(
@@ -835,7 +877,7 @@ def _assert_payment_within_accruals(connection: sqlite3.Connection, tx: dict[str
     no contract is present the check is skipped (cannot be evaluated).
     """
     contract_id = tx.get("contract_id")
-    if not contract_id:
+    if not contract_id or tx.get("allow_advance"):
         return
     direction = "payable" if tx["direction"] == "outgoing" else "receivable"
     row = connection.execute(
@@ -845,27 +887,47 @@ def _assert_payment_within_accruals(connection: sqlite3.Connection, tx: dict[str
             COALESCE(SUM(payment_amount), 0) AS payment
         FROM mutual_settlements_register
         WHERE contract_id = ? AND direction = ?
+          AND organization_id = ? AND counterparty_id = ?
+          AND (object_id = ? OR (object_id IS NULL AND ? IS NULL))
+          AND period <= ?
           AND COALESCE(is_deleted, 0) = 0
         """,
-        (contract_id, direction),
+        (contract_id, direction, _resolve_tx_organization(connection, tx), tx.get("counterparty_id"),
+         tx.get("object_id"), tx.get("object_id"), str(tx["date"])),
     ).fetchone()
-    open_balance = float(row["accrual"] or 0) - float(row["payment"] or 0)
-    amount = float(tx.get("amount") or 0)
-    if amount > open_balance + 0.01:
+    open_balance = money(row["accrual"]) - money(row["payment"])
+    amount = money(tx.get("amount"))
+    if amount > open_balance:
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Платёж ({amount:g}) превышает открытую задолженность по договору "
-                f"({open_balance:g}). Сначала начислиите задолженность проведением документа ТМЦ."
+                f"({open_balance:g}). Разрешите аванс или сначала начислите задолженность проведением документа ТМЦ."
             ),
         )
 
 
+@rollback_on_error
 def unpost_payment_transaction(connection: sqlite3.Connection, *, tx_id: int, user: UserInfo) -> None:
     _require_admin(user)
+    connection.execute("UPDATE payment_transactions SET id = id WHERE id = ?", (tx_id,))
     tx = get_payment_transaction(connection, tx_id)
     if not tx["is_posted"]:
         raise HTTPException(status_code=400, detail="Payment transaction is not posted")
+    lock_settlement_contracts(connection, tx.get('contract_id'))
+    tx = get_payment_transaction(connection, tx_id)
+    # A cash refund consumes the payment's settlement credit. Removing that
+    # payment first would manufacture debt after money has already left.
+    if connection.execute('''SELECT id FROM mutual_settlements_register
+        WHERE recorder_type = 'goods_return_refund' AND is_deleted = 0 AND payment_amount < 0
+        AND organization_id = ? AND direction = ?
+        AND (counterparty_id = ? OR (counterparty_id IS NULL AND ? IS NULL))
+        AND (contract_id = ? OR (contract_id IS NULL AND ? IS NULL))
+        AND (object_id = ? OR (object_id IS NULL AND ? IS NULL)) AND period >= ? LIMIT 1''',
+        (_resolve_tx_organization(connection, tx), 'payable' if tx['direction'] == 'outgoing' else 'receivable',
+         tx.get('counterparty_id'), tx.get('counterparty_id'), tx.get('contract_id'), tx.get('contract_id'),
+         tx.get('object_id'), tx.get('object_id'), str(tx['date']))).fetchone():
+        raise HTTPException(status_code=400, detail='Сначала отмените зависимые возвраты денег')
     connection.execute(
         "DELETE FROM payment_schedule_register WHERE recorder_type = 'payment_transaction' AND recorder_id = ?",
         (tx_id,),
@@ -907,6 +969,9 @@ def suggest_incoming_from_work_execution(
         contract_clause = "AND e.contract_id = ?"
         params.append(contract_id)
 
+    scope = ["1 = 1"]
+    add_scope(connection, scope, params, "ct.organization_id")
+    scope_sql = " AND ".join(scope)
     rows = connection.execute(
         f"""
         SELECT
@@ -925,6 +990,7 @@ def suggest_incoming_from_work_execution(
           {object_clause}
           {contract_clause}
           AND COALESCE(wer.is_deleted, 0) = 0
+          AND {scope_sql}
         GROUP BY e.contract_id, e.object_id, wer.estimate_id, ct.counterparty_id
         ORDER BY last_date DESC
         """,
@@ -959,6 +1025,8 @@ def suggest_outgoing_from_payroll(
     object_id: int | None = None,
     estimate_id: int | None = None,
 ) -> list[dict[str, Any]]:
+    if organizations(connection) is not None:
+        raise HTTPException(status_code=403, detail="Общий расчет зарплаты не имеет организации; требуется неограниченный доступ")
     params: list[Any] = [date_from, date_to]
     object_clause = ""
     if object_id is not None:
@@ -1056,6 +1124,8 @@ def query_payment_register(
         where_parts.append("psr.category = ?")
         params.append(category)
 
+    add_scope(connection, where_parts, params, "(SELECT organization_id FROM contracts WHERE id = psr.contract_id)")
+    add_cash_history_scope(connection, where_parts, params)
     where_sql = " AND ".join(where_parts)
     rows = connection.execute(
         f"""
@@ -1158,6 +1228,8 @@ def query_cashflow_by_day(
     if counterparty_id:
         where_parts.append("psr.counterparty_id = ?")
         params.append(counterparty_id)
+    add_scope(connection, where_parts, params, "(SELECT organization_id FROM contracts WHERE id = psr.contract_id)")
+    add_cash_history_scope(connection, where_parts, params)
     where_sql = " AND ".join(where_parts)
 
     rows = connection.execute(

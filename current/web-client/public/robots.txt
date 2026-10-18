@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /ctm/ctm-one-pager.html
+
+Sitemap: https://abitek.su:18443/sitemap.xml

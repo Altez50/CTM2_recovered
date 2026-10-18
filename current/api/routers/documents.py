@@ -6,11 +6,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from fastapi.responses import Response
 
-from api.auth_dependencies import get_current_user, get_db
+from api.auth_dependencies import get_current_user, get_db, require_roles
 from api.list_query import parse_quick_filters
 from api.models.auth import UserInfo
 from api.models.common import ApiMessage, ApiResponse
-from api.text_import_export import export_document, import_document_lines
+from api.text_import_export import (
+    export_document,
+    import_document_lines,
+    read_limited_import_body,
+)
 from api.models.documents import (
     DailyReportCreate,
     DailyReportUpdate,
@@ -481,16 +485,17 @@ async def import_estimate_text(
     estimate_id: int,
     request: Request,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, Depends(require_roles("admin", "manager"))],
     format: str = Query("tsv", description="tsv | json | xlsx"),
     replace: bool = Query(True, description="Replace existing lines"),
+    preview: bool = Query(False, description="Validate and resolve without saving"),
 ) -> ApiResponse:
     """Import tabular lines for an estimate from TSV / JSON / XLSX.
 
     Missing works and units are created automatically. Group rows
     (is_group=1) are imported as-is.
     """
-    raw = await request.body()
+    raw = await read_limited_import_body(request)
     if format == "xlsx":
         data: bytes | str = raw
     elif isinstance(raw, (bytes, bytearray)):
@@ -499,7 +504,7 @@ async def import_estimate_text(
         data = raw or ""
 
     result = import_document_lines(
-        connection, "estimate", estimate_id, fmt=format, data=data, replace=replace
+        connection, "estimate", estimate_id, fmt=format, data=data, replace=replace, preview=preview
     )
     return ApiResponse(
         data=result, message=f"Imported {result.get('imported', 0)} lines"

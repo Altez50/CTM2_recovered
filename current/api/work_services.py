@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 COMPONENT_TYPES = {"Material", "Labor", "Equipment", "Other"}
 WORK_REVIEW_STATUSES = {"ok", "incorrect", "corrected"}
+NEW_MATERIALS_FOLDER_NAME = "Новые материалы"
 
 # Unit synonym mapping for normalization
 # Maps various unit name variations to canonical forms
@@ -198,6 +199,39 @@ def _find_preferred_unit_by_normalized_name(
 
 def _utcnow() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
+
+
+def ensure_new_materials_folder(connection: sqlite3.Connection) -> int:
+    """Return the shared folder used by every automatic material creator."""
+    rows = connection.execute(
+        """
+        SELECT id, name
+        FROM materials
+        WHERE COALESCE(is_group, 0) = 1
+          AND marked_for_deletion = 0
+          AND COALESCE(is_deleted, 0) = 0
+        ORDER BY id
+        """
+    ).fetchall()
+    folder_key = " ".join(NEW_MATERIALS_FOLDER_NAME.split()).casefold()
+    for row in rows:
+        if " ".join(str(row["name"] or "").split()).casefold() == folder_key:
+            return int(row["id"])
+
+    timestamp = _utcnow()
+    folder_uuid = new_uuid()
+    connection.execute(
+        """
+        INSERT INTO materials (
+            code, name, unit_id, price, parent_id, is_group,
+            marked_for_deletion, created_at, modified_at, uuid, updated_at, is_deleted
+        ) VALUES (NULL, ?, NULL, 0, NULL, 1, 0, ?, ?, ?, ?, 0)
+        """,
+        (NEW_MATERIALS_FOLDER_NAME, timestamp, timestamp, folder_uuid, timestamp),
+    )
+    folder_id = last_insert_id(connection)
+    register_sync_change(connection, entity_type="materials", entity_uuid=folder_uuid, operation="INSERT")
+    return folder_id
 
 
 def _normalize_bool(value: object) -> bool:
@@ -470,6 +504,7 @@ def _find_material_by_code_or_name(
         LEFT JOIN units u ON u.id = m.unit_id
         WHERE m.marked_for_deletion = 0
           AND COALESCE(m.is_deleted, 0) = 0
+          AND COALESCE(m.is_group, 0) = 0
         ORDER BY m.id ASC
         """
     ).fetchall()
@@ -681,7 +716,11 @@ def list_materials(
 ) -> tuple[list[dict[str, object]], Pagination]:
     page = max(1, page)
     page_size = min(max(1, page_size), 100)
-    where_parts = ["m.marked_for_deletion = 0"]
+    where_parts = [
+        "m.marked_for_deletion = 0",
+        "COALESCE(m.is_deleted, 0) = 0",
+        "COALESCE(m.is_group, 0) = 0",
+    ]
     params: list[object] = []
     if search:
         where_parts.append("(m.name LIKE ? OR COALESCE(m.code, '') LIKE ?)")
@@ -1316,6 +1355,7 @@ def create_materials_from_import_preview(
     created_count = 0
     reused_count = 0
     results: list[ImportMaterialCreateResult] = []
+    new_materials_folder_id: int | None = None
 
     for item in payload.materials:
         existing = _find_material_by_code_or_name(
@@ -1341,19 +1381,23 @@ def create_materials_from_import_preview(
 
         resolved_unit_id = _resolve_unit_id(connection, item.unit_id, item.unit_name)
         resolved_unit = _require_unit(connection, resolved_unit_id) if resolved_unit_id is not None else None
+        if new_materials_folder_id is None:
+            new_materials_folder_id = ensure_new_materials_folder(connection)
         timestamp = _utcnow()
         material_uuid = new_uuid()
         connection.execute(
             """
             INSERT INTO materials (
-                code, name, unit_id, price, marked_for_deletion, created_at, modified_at, uuid, updated_at, is_deleted
-            ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, 0)
+                code, name, unit_id, price, parent_id, is_group,
+                marked_for_deletion, created_at, modified_at, uuid, updated_at, is_deleted
+            ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, 0)
             """,
             (
                 (item.material_code or "").strip() or None,
                 item.material_name.strip(),
                 resolved_unit_id,
                 round(float(item.unit_price or 0), 2),
+                new_materials_folder_id,
                 timestamp,
                 timestamp,
                 material_uuid,

@@ -18,6 +18,7 @@ from api.auth_dependencies import (
 from api.models.auth import LoginRequest, LoginResponse, UserInfo
 from api.models.common import ApiMessage
 from api.security import create_access_token, decode_access_token, verify_password
+from api.trade_access import read_organization_ids
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -77,6 +78,7 @@ def login(
             username=row["username"],
             role=row["role"],
             is_active=bool(row["is_active"]),
+            organization_ids=read_organization_ids(connection, row['id']),
             person_id=row["person_id"],
             person_uuid=row["person_uuid"],
             full_name=row["full_name"],

@@ -5,6 +5,8 @@ http://:80 {
     redir /ctm /ctm/ 301
     redir /api /api/ 301
 
+    reverse_proxy /robots.txt frontend:80
+    reverse_proxy /sitemap.xml frontend:80
     reverse_proxy /ctm/* frontend:80
     reverse_proxy /api/* api:8000
     reverse_proxy /docs api:8000
@@ -21,6 +23,8 @@ https://:443 {
     redir /ctm /ctm/ 301
     redir /api /api/ 301
 
+    reverse_proxy /robots.txt frontend:80
+    reverse_proxy /sitemap.xml frontend:80
     reverse_proxy /ctm/* frontend:80
     reverse_proxy /api/* api:8000
     reverse_proxy /docs api:8000

@@ -1,6 +1,11 @@
 # Спецификация обмена данными документов (TSV / JSON / XLSX)
 
-Обновлено: 2026-07-16
+Версия: 0.2
+Обновлено: 2026-09-02
+Статус реализации: **частично**. Шесть типов подключены к общему модулю;
+lifecycle/RBAC/streaming limits/atomic preview-apply и sync покрыты тестами.
+Табель и ТМЦ имеют отдельные пути; actor audit и expanded XLSX-bomb/time limits
+ещё не унифицированы. Проверено по коду: 2026-09-02 (`SPEC_REVIEW.md`).
 
 ---
 
@@ -8,7 +13,7 @@
 
 ### 1.1. Единый модуль обмена данными — РЕАЛИЗОВАН
 
-Модуль [api/text_import_export.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/text_import_export.py)
+Модуль [`current/api/text_import_export.py`](current/api/text_import_export.py)
 предоставляет универсальный импорт/экспорт табличной части документов
 в форматах **TSV**, **JSON**, **XLSX** с автоматическим созданием
 отсутствующих ссылочных типов (материалы, единицы, работы, контрагенты, машины).
@@ -21,7 +26,7 @@
 | JSON | да | да | `application/json; charset=utf-8` |
 | XLSX | да (через `openpyxl`) | да (через `openpyxl`) | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` |
 
-### 1.2. Поддерживаемые типы документов (5)
+### 1.2. Поддерживаемые типы документов (6)
 
 Зарегистрированы в `DOCUMENT_SCHEMAS` (text_import_export.py:356–431)
 и в `_DOC_KIND_TO_TYPE` (cost_accounting.py:656–662):
@@ -33,8 +38,12 @@
 | Субподряд | `subcontract_acceptance` | `subcontract-acceptances` | `/api/cost` | SubcontractAcceptanceFormView |
 | Накладные расходы | `overhead_expense` | `overhead-expenses` | `/api/cost` | OverheadExpenseFormView |
 | Дневной отчёт | `daily_report` | `daily-reports` | `/api/cost` | DailyReportFormView |
+| Смета | `estimate` | `estimates` | `/api/documents` | EstimateFormView |
 
-Все 5 форм имеют:
+Пять cost-форм используют `DocumentDataExchangeDialog`; смета использует
+`EstimateDataExchangeDialog` с теми же форматами и отдельными routes.
+
+Все пять cost-форм имеют:
 - Кнопку «⇄ Обмен данными» в тулбаре
 - Модалку `DocumentDataExchangeDialog` с вкладками Импорт/Экспорт
 - Авто-перезагрузку данных после импорта (`@imported="reload"`)
@@ -75,11 +84,10 @@ GET   /api/cost/{doc_kind}/{doc_id}/export-text?format=tsv|json|xlsx
 
 ## 2. Статусы остальных типов документов
 
-### 2.1. Документы БЕЗ поддержки единого обмена (4)
+### 2.1. Документы с собственным обменом либо без редактируемых строк
 
 | Документ | Таблица строк | FK документа | Справочники в строках | Импорт/экспорт | Роутер |
 |---|---|---|---|---|---|
-| **Смета (Estimate)** | `estimate_lines` (database.py:248) | `estimate_id` | `work_id` | **НЕТ** (нет ни своего, ни общего) | `/api/documents` |
 | **Табель (Timesheet)** | `timesheet_lines` (database.py:373) | `timesheet_id` | `employee_id`→persons | **свой** (Excel/JSON, только превью) | `/api/documents` |
 | **Приходная накладная** | `goods_receipt_lines` (database.py:612) | `receipt_id` | `material_id`, `unit_id`, `object_id` | **свой** (Excel `.xlsx`/`.xls`) | `/api/goods` |
 | **Расходная накладная** | `goods_issue_lines` (database.py:672) | `issue_id` | `material_id`, `unit_id`, `object_id` | **свой** (Excel `.xlsx`/`.xls`) | `/api/goods` |
@@ -91,10 +99,15 @@ GET   /api/cost/{doc_kind}/{doc_id}/export-text?format=tsv|json|xlsx
 Колонки: `line_number, work_id, quantity, unit, price, labor_rate, sum,
 planned_labor, is_group, group_name, is_collapsed, parent_group_id`.
 
-Импорт/экспорт: **полностью отсутствует**. Имеет иерархию строк (группы).
-Эндпоинты в documents.py: CRUD + post/unpost + print + copy.
+Импорт/экспорт: **реализован через общий `DOCUMENT_SCHEMAS['estimate']`**.
+Эндпоинты: `POST /api/documents/estimates/{id}/import-text` и
+`GET /api/documents/estimates/{id}/export-text` для TSV/JSON/XLSX.
 
-Фронтенд: `EstimateFormView.vue` — без кнопок импорта/экспорта.
+Фронтенд: `EstimateFormView.vue` + `EstimateDataExchangeDialog.vue`.
+
+**Оставшийся gap:** round-trip иерархии не доказан. Формат содержит `is_group`
+и `group_name`, но не фиксирует стабильный идентификатор/путь родителя; требуется
+acceptance-тест вложенных групп и явное правило восстановления `parent_group_id`.
 
 #### 2.1.2. Табель (Timesheet)
 
@@ -146,10 +159,8 @@ drawing_code, note, object_id`.
 «Движения по регистрам». Компонент `GoodsLinesEditor.vue`.
 
 **Гэпы:**
-- Материалы **не создаются автоматически** при импорте — только lookup
-  по коду; если не найден → warning. Кнопка «Создать материалы» работает
-  постфактум, отдельно.
-- `unit_id` всегда `None` при импорте (стр. 1945 goods_services.py).
+- Материалы создаются отдельной явной командой через
+  `POST /api/goods/materials/resolve`; это не автоматическое применение профиля.
 - Профили импорта с `create_missing_*` не подключены.
 - Товарные накладные **не интегрированы** в единый `text_import_export.py`.
 - Файлы форм находятся в `views/goods/`, а не в `views/documents/`.
@@ -218,7 +229,7 @@ drawing_code, note, object_id`.
 - `maps`: колонка в БД, куда пишется resolved ID
 - `ref_helper`: вспомогательное текстовое поле (snapshot имени)
 
-Полные схемы всех 5 типов — в `DOCUMENT_SCHEMAS` (text_import_export.py:356–431).
+Полные схемы всех 6 типов — в `DOCUMENT_SCHEMAS`.
 
 ---
 
@@ -233,7 +244,20 @@ drawing_code, note, object_id`.
    в `warnings` добавляется предупреждение.
 4. При `replace=True` существующие строки документа удаляются перед
    импортом; при `replace=False` — добавляются к существующим.
-5. Ответ: `{ "imported": N, "warnings": [...], "format": "tsv" }`.
+5. Ответ: `{ "imported": N, "warnings": [...], "format": "tsv", "preview": bool }`.
+
+Обязательные ограничения, отсутствовавшие в версии 0.1:
+
+6. Перед изменением проверяются существование документа, его lifecycle state и
+   право пользователя. Проведённый/распределённый документ изменять импортом нельзя.
+7. `replace=True` выполняется атомарно: ошибка parsing/validation/insert сохраняет
+   исходные строки. Для массового создания ссылок используется preview → apply с
+   явным отчётом created/reused/skipped.
+8. Флаг schema `create` исполняется: при `create=False` resolver не создаёт запись.
+9. Созданные/изменённые сущности регистрируются для sync. Actor-aware audit —
+   оставшийся общий gap аудита.
+10. Реализованы streaming limit 10 MiB и максимум 50 000 строк. Отдельные лимиты
+    распакованного XLSX/ZIP и времени обработки остаются hardening-задачей.
 
 ## 5. Семантика выгрузки
 
@@ -256,11 +280,12 @@ drawing_code, note, object_id`.
 - Выбор формата: TSV / JSON / XLSX
 - Import: textarea (для TSV/JSON) или file input (для XLSX)
 - Чекбокс «Заменить существующие строки»
-- После успешного импорта эмитит `imported` → форма перезагружает данные
+- Требует явные шаги «Проверить» (`preview=true`) → «Применить»
+- После успешного apply эмитит `imported` → форма перезагружает данные
 - Export: кнопка «Скачать» → blob download
 
 API-клиент (`api/costAccounting.ts`):
-- `importDocumentText(kind, docId, format, body, replace)` → POST
+- `importDocumentText(kind, docId, format, body, replace, preview)` → POST
 - `exportDocumentText(kind, docId, format)` → GET (blob)
 - `DocDataExchangeKind` = union литералов всех 5 `doc_kind`
 
@@ -268,12 +293,11 @@ API-клиент (`api/costAccounting.ts`):
 
 ## 7. Оставшиеся гэпы и рекомендации
 
-### 7.1. Смета — нет обмена данными
+### 7.1. Смета — обмен есть, не доказан иерархический round-trip
 
-Смета (`estimate_lines`) не поддерживается ни единым модулем, ни
-собственным импортом/экспортом. Рекомендуется добавить схему в
-`DOCUMENT_SCHEMAS` и эндпоинты в `documents.py`. Сложность: иерархия
-строк (`parent_group_id`, `is_group`) требует расширения формата.
+Смета подключена к `DOCUMENT_SCHEMAS` и имеет API/UI для TSV/JSON/XLSX.
+Нужно зафиксировать перенос родителя группы и покрыть сценарии: группа → работа,
+вложенные группы, одинаковые названия групп, replace/append и повторный импорт.
 
 ### 7.2. Табель — собственная реализация, не унифицирована
 
@@ -281,13 +305,13 @@ API-клиент (`api/costAccounting.ts`):
 код (`services.py`). 31 колонка дней плохо ложится на TSV — но JSON
 можно интегрировать. Создание физлиц происходит только на превью.
 
-### 7.3. Товарные накладные — материалы не создаются при импорте
+### 7.3. Товарные накладные — создание материалов отдельно от политики профиля
 
-`preview_goods_lines_import` в `goods_services.py:1876` только делает
-lookup материалов по коду. Кнопка «Создать материалы» работает отдельно.
-Профили импорта (`create_missing_materials`, `create_missing_units`)
-задекларированы, но **не используются**. Рекомендуется подключить
-`get_or_create_material` из `text_import_export.py` в goods-импорт.
+Preview делает lookup, после чего пользователь может отдельно создать/переиспользовать
+материалы через `/api/goods/materials/resolve`. Профили
+`create_missing_materials/create_missing_units` всё ещё не управляют этим шагом.
+Нужен единый preview/apply контракт, RBAC и audit; скрытое автосоздание из preview
+не допускается.
 
 ### 7.4. Несоответствие размещения файлов
 
@@ -309,8 +333,21 @@ lookup материалов по коду. Кнопка «Создать мат�
 | Субподряд | ✅ TSV/JSON/XLSX | — | ✅ | ✅ counterparties, units, works |
 | Накладные расходы | ✅ TSV/JSON/XLSX | — | ✅ | ✅ counterparties (cost_elements — нет) |
 | Дневной отчёт | ✅ TSV/JSON/XLSX | — | ✅ | ✅ units, works |
-| Смета | ❌ | ❌ | ❌ | — |
+| Смета | ✅ TSV/JSON/XLSX | — | ✅ | ✅ works, units; иерархия требует теста |
 | Табель | ❌ | ✅ Excel/JSON | ✅ | persons (на превью) |
-| Приходная накладная | ❌ | ✅ Excel | ✅ | ❌ (отдельная кнопка) |
-| Расходная накладная | ❌ | ✅ Excel | ✅ | ❌ (отдельная кнопка) |
+| Приходная накладная | ❌ | ✅ Excel | ✅ | ✅ отдельная явная команда; profile flags не подключены |
+| Расходная накладная | ❌ | ✅ Excel | ✅ | ✅ отдельная явная команда; profile flags не подключены |
 | Калькуляция затрат | ❌ | ❌ | ❌ | — (нет строк) |
+
+---
+
+## 9. Критерии приёмки безопасности и целостности
+
+1. Импорт в проведённый/распределённый документ отклоняется и не меняет строки.
+2. Неавторизованная роль получает 403 на apply и создание справочников.
+3. Ошибка в середине `replace=True` оставляет исходную табличную часть без изменений.
+4. `create=False` никогда не создаёт справочник; warning содержит номер строки.
+5. Export → import шести общих типов воспроизводит строки; для сметы сохраняется
+   иерархия групп.
+6. Созданные ссылки синхронизируются и содержат audit actor/action.
+7. Граничные размеры файлов и строк дают контролируемый 4xx без роста памяти.

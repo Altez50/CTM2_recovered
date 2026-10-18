@@ -34,11 +34,13 @@
           <button class="button button-secondary" type="button" :disabled="!rows.length" @click="exportCsv">Выгрузить в CSV</button>
           <div class="toolbar-grow"></div>
           <span class="metric-card" v-if="rows.length">
-            Дт сальдо кон.: <strong>{{ formatMoney(totals.recClosing) }}</strong> • Кт сальдо кон.: <strong>{{ formatMoney(totals.payClosing) }}</strong>
+            Долг покупателей: <strong>{{ formatMoney(totals.recClosing) }}</strong> • Долг поставщикам: <strong>{{ formatMoney(totals.payClosing) }}</strong>
+            • Авансы покупателей: <strong>{{ formatMoney(totals.customerAdvance) }}</strong> • Авансы поставщикам: <strong>{{ formatMoney(totals.supplierAdvance) }}</strong>
           </span>
         </div>
 
         <p v-if="error" class="message-banner message-error">{{ error }}</p>
+        <p class="muted">Долг и аванс показаны отдельно по организации, контрагенту, договору и объекту. Зачет выполняется в том же разрезе при проведении поставки.</p>
 
         <DataTable :columns="columns" :rows="rows as Record<string, unknown>[]" :loading="loading" empty-text="Нет данных. Задайте период и нажмите «Сформировать».">
           <template #cell-receivable_opening="{ row }">{{ formatMoney((row as unknown as SettlementTurnoverRow).receivable_opening) }}</template>
@@ -53,6 +55,10 @@
           <template #cell-payable_closing="{ row }">
             <strong>{{ formatMoney((row as unknown as SettlementTurnoverRow).payable_closing) }}</strong>
           </template>
+          <template #cell-customer_advance_opening="{ row }">{{ formatMoney(Number(row.customer_advance_opening)) }}</template>
+          <template #cell-customer_advance_closing="{ row }">{{ formatMoney(Number(row.customer_advance_closing)) }}</template>
+          <template #cell-supplier_advance_opening="{ row }">{{ formatMoney(Number(row.supplier_advance_opening)) }}</template>
+          <template #cell-supplier_advance_closing="{ row }">{{ formatMoney(Number(row.supplier_advance_closing)) }}</template>
         </DataTable>
       </div>
     </section>
@@ -91,6 +97,7 @@ const columns = [
   { key: 'organization_name', label: 'Организация' },
   { key: 'counterparty_name', label: 'Контрагент' },
   { key: 'contract_number', label: 'Договор' },
+  { key: 'object_name', label: 'Объект' },
   { key: 'receivable_opening', label: 'Дт сальдо нач.' },
   { key: 'receivable_accrual_turnover', label: 'Дт оборот (начисл.)' },
   { key: 'receivable_payment_turnover', label: 'Дт оборот (оплата)' },
@@ -99,15 +106,21 @@ const columns = [
   { key: 'payable_accrual_turnover', label: 'Кт оборот (начисл.)' },
   { key: 'payable_payment_turnover', label: 'Кт оборот (оплата)' },
   { key: 'payable_closing', label: 'Кт сальдо кон.' },
+  { key: 'customer_advance_opening', label: 'Аванс покупателя нач.' },
+  { key: 'customer_advance_closing', label: 'Аванс покупателя кон.' },
+  { key: 'supplier_advance_opening', label: 'Аванс поставщику нач.' },
+  { key: 'supplier_advance_closing', label: 'Аванс поставщику кон.' },
 ]
 
 const totals = computed(() => rows.value.reduce(
   (acc, r) => {
     acc.recClosing += r.receivable_closing
     acc.payClosing += r.payable_closing
+    acc.customerAdvance += r.customer_advance_closing
+    acc.supplierAdvance += r.supplier_advance_closing
     return acc
   },
-  { recClosing: 0, payClosing: 0 },
+  { recClosing: 0, payClosing: 0, customerAdvance: 0, supplierAdvance: 0 },
 ))
 
 function formatMoney(value: number) {
@@ -136,8 +149,8 @@ async function load() {
 function exportCsv() {
   downloadCsv(
     `ОСВ_взаиморасчеты_${filters.date_from}_${filters.date_to}`,
-    ['Организация', 'Контрагент', 'Договор', 'Дт сальдо нач.', 'Дт оборот (начисл.)', 'Дт оборот (оплата)', 'Дт сальдо кон.', 'Кт сальдо нач.', 'Кт оборот (начисл.)', 'Кт оборот (оплата)', 'Кт сальдо кон.'],
-    rows.value.map((r) => [r.organization_name, r.counterparty_name, r.contract_number, r.receivable_opening, r.receivable_accrual_turnover, r.receivable_payment_turnover, r.receivable_closing, r.payable_opening, r.payable_accrual_turnover, r.payable_payment_turnover, r.payable_closing]),
+    columns.map(c => c.label),
+    rows.value.map(r => columns.map(c => r[c.key as keyof SettlementTurnoverRow])),
   )
 }
 

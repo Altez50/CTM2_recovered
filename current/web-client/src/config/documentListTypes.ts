@@ -67,6 +67,8 @@ export interface DocListConfig {
   api: DocListApi
   columns: DocListColumn[]
   baseOn?: BaseOnTarget[]
+  /** Разрешено ли текущему пользователю создавать документы этого вида. */
+  canCreate?: (user: { role?: string; person_id?: number | null } | null) => boolean
   /** Склонённые подписи для диалогов подтверждения («Пометить смету на удаление?»). */
   labels: { one: string; few: string; many: string }
   /**
@@ -75,6 +77,8 @@ export interface DocListConfig {
    * Возвращает true, если текущему пользователю разрешено проводить/отменять.
    */
   canManagePosting?: (user: { role?: string; person_id?: number | null } | null, row: DocListRow) => boolean
+  /** Ролевая/владельческая проверка удаления строки; проверка состояния задаётся отдельно. */
+  canDelete?: (user: { role?: string; person_id?: number | null } | null, row: DocListRow) => boolean
   /** Доп. параметры list-запроса, специфичные для вида (object_id и т.п.). */
   extraQuery?: () => Record<string, string | number | undefined>
   /** Поле статуса проведения (по умолчанию 'is_posted'). */

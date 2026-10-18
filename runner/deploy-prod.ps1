@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   CTM production deploy — prompts for the kassir password, then uploads
   current/ and deploy/ to prod and rebuilds the docker-compose stack
@@ -65,20 +65,25 @@ if (-not (Test-Path -LiteralPath $DeployScript)) {
 
 try {
     Write-Host '=== CTM production deploy ===' -ForegroundColor Green
-    Write-Host 'Target : kassir@192.168.0.39 (LAN, password auth — root is disabled)' -ForegroundColor DarkGray
+    Write-Host 'Target : kassir@192.168.0.39 (LAN — key auth, root is disabled)' -ForegroundColor DarkGray
     Write-Host 'Engine : deploy_prod.py (paramiko)' -ForegroundColor DarkGray
 
-    # --- prompt for the kassir password once --------------------------------
-    Write-Host 'Enter the kassir password (SSH login; sudo is passwordless on prod).' -ForegroundColor DarkGray
-    $sec = Read-Host 'kassir password' -AsSecureString
-    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
-    try {
-        $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
-    } finally {
-        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+    # --- auth: dedicated deploy key, else prompt for the password once ------
+    $DeployKey = Join-Path $env:USERPROFILE '.ssh\ctm_prod_ed25519'
+    if (Test-Path -LiteralPath $DeployKey) {
+        Write-Host "Auth   : deploy key $DeployKey (no password needed)" -ForegroundColor DarkGray
+    } else {
+        Write-Host 'Deploy key not found; enter the kassir password (legacy auth).' -ForegroundColor DarkGray
+        $sec = Read-Host 'kassir password' -AsSecureString
+        $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+        try {
+            $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
+        } finally {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+        }
+        $env:CTM_KASSIR_PASS = $plain
+        $sec = $null; $plain = $null
     }
-    $env:CTM_KASSIR_PASS = $plain
-    $sec = $null; $plain = $null
 
     # --- run the paramiko deploy (streams remote docker output live) --------
     Write-Host "`n>>> Launching deploy_prod.py ..." -ForegroundColor Cyan

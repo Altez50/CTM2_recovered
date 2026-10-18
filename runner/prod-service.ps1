@@ -1,6 +1,6 @@
-<#
+﻿<#
 .SYNOPSIS
-  Управление api-контейнером на prod (start/stop/restart/status).
+  Управление CTM Docker Compose на prod по LAN.
 
 .DESCRIPTION
   SSH login as `root` is DISABLED on prod. This wrapper connects as `kassir`
@@ -15,14 +15,18 @@
     3. Runs prod_service.py, forwarding the password via CTM_KASSIR_PASS.
 
 .PARAMETER Action
-  start | stop | restart | status  (по умолчанию status)
+  status | logs | start | stop | restart | up  (по умолчанию status)
+
+.PARAMETER Target
+  api | frontend | reverse-proxy | stack (по умолчанию stack)
 
 .PARAMETER ConfigPath
   Принимается для совместимости сигнатуры; не используется.
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('start', 'stop', 'restart', 'status')][string]$Action = 'status',
+    [ValidateSet('start', 'stop', 'restart', 'status', 'logs', 'up')][string]$Action = 'status',
+    [ValidateSet('api', 'frontend', 'reverse-proxy', 'stack')][string]$Target = 'stack',
     [string]$ConfigPath,
     [string]$RepoRoot,
     [string]$LogFile
@@ -62,25 +66,30 @@ if (-not (Test-Path -LiteralPath $EngineScript)) {
 
 try {
     Write-Host '=== Prod service control ===' -ForegroundColor Green
-    Write-Host "Target : kassir@192.168.0.39 (LAN, password auth — root is disabled)" -ForegroundColor DarkGray
-    Write-Host "Action : $Action" -ForegroundColor DarkGray
+    Write-Host "Target : kassir@192.168.0.39 (LAN — key auth, root is disabled)" -ForegroundColor DarkGray
+    Write-Host "Action : $Action / Target: $Target" -ForegroundColor DarkGray
     Write-Host 'Engine : prod_service.py (paramiko)' -ForegroundColor DarkGray
 
-    # --- prompt for the kassir password once --------------------------------
-    Write-Host 'Enter the kassir password (SSH login; sudo is passwordless on prod).' -ForegroundColor DarkGray
-    $sec = Read-Host 'kassir password' -AsSecureString
-    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
-    try {
-        $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
-    } finally {
-        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+    # --- auth: dedicated deploy key, else prompt for the password once ------
+    $DeployKey = Join-Path $env:USERPROFILE '.ssh\ctm_prod_ed25519'
+    if (Test-Path -LiteralPath $DeployKey) {
+        Write-Host "Auth   : deploy key $DeployKey (no password needed)" -ForegroundColor DarkGray
+    } else {
+        Write-Host 'Deploy key not found; enter the kassir password (legacy auth).' -ForegroundColor DarkGray
+        $sec = Read-Host 'kassir password' -AsSecureString
+        $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+        try {
+            $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
+        } finally {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+        }
+        $env:CTM_KASSIR_PASS = $plain
+        $sec = $null; $plain = $null
     }
-    $env:CTM_KASSIR_PASS = $plain
-    $sec = $null; $plain = $null
 
     # --- run the paramiko engine (streams remote output live) ----------------
     Write-Host "`n>>> Launching prod_service.py ..." -ForegroundColor Cyan
-    & $Py $EngineScript --action $Action
+    & $Py $EngineScript --action $Action --target $Target
     $rc = $LASTEXITCODE
 
     if ($rc -ne 0) {

@@ -24,7 +24,7 @@ import json
 import sqlite3
 from typing import Any, Iterable
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from api.database import last_insert_id, new_uuid, register_sync_change, row_to_dict
 from api.work_services import (
@@ -33,7 +33,38 @@ from api.work_services import (
     _normalize_unit_name,
     _resolve_unit_id,
     _utcnow,
+    ensure_new_materials_folder,
 )
+
+
+MAX_IMPORT_BYTES = 10 * 1024 * 1024
+MAX_IMPORT_ROWS = 50_000
+
+
+async def read_limited_import_body(request: Request) -> bytes:
+    """Read an import request without buffering more than the configured limit."""
+    declared_size = request.headers.get("content-length")
+    if declared_size:
+        try:
+            if int(declared_size) > MAX_IMPORT_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Import exceeds {MAX_IMPORT_BYTES} bytes",
+                )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length header")
+
+    chunks: list[bytes] = []
+    received = 0
+    async for chunk in request.stream():
+        received += len(chunk)
+        if received > MAX_IMPORT_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Import exceeds {MAX_IMPORT_BYTES} bytes",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 # ── Reference resolvers (get_or_create) ────────────────────────────────────
@@ -54,6 +85,7 @@ def get_or_create_material(
     name: str | None = None,
     unit_name: str | None = None,
     price: float = 0.0,
+    create: bool = True,
 ) -> int | None:
     """Return material id, looking it up by code/name and creating if missing."""
     existing = _find_material_by_code_or_name(
@@ -63,19 +95,23 @@ def get_or_create_material(
         return int(existing["id"])
     if not name and not code:
         return None
+    if not create:
+        return None
     unit_id = get_or_create_unit(connection, unit_name) if unit_name else None
+    parent_id = ensure_new_materials_folder(connection)
     now = _utcnow()
     m_uuid = new_uuid()
     connection.execute(
         """INSERT INTO materials
-               (code, name, unit_id, price, created_at, modified_at, uuid,
-                updated_at, is_deleted, marked_for_deletion)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)""",
+               (code, name, unit_id, price, parent_id, is_group,
+                created_at, modified_at, uuid, updated_at, is_deleted, marked_for_deletion)
+           VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, 0)""",
         (
             (code or "").strip() or None,
             (name or "").strip(),
             unit_id,
             float(price or 0),
+            parent_id,
             now, now, m_uuid, now,
         ),
     )
@@ -90,6 +126,7 @@ def get_or_create_work(
     code: str | None = None,
     name: str | None = None,
     unit_name: str | None = None,
+    create: bool = True,
 ) -> int | None:
     """Return work id, looking it up by code then name; create if missing."""
     ncode = _normalize_lookup_value(code)
@@ -108,12 +145,16 @@ def get_or_create_work(
         ).fetchone()
         if row and _normalize_lookup_value(row["code"]) == ncode and ncode:
             return int(r["id"])
+
     for r in rows:
         row = connection.execute(
             "SELECT code, name FROM works WHERE id = ?", (r["id"],)
         ).fetchone()
         if row and _normalize_lookup_value(row["name"]) == nname and nname:
             return int(r["id"])
+
+    if not create:
+        return None
 
     unit_id = get_or_create_unit(connection, unit_name) if unit_name else None
     now = _utcnow()
@@ -125,8 +166,8 @@ def get_or_create_work(
                 marked_for_deletion)
            VALUES (?, ?, ?, 0, NULL, 0, 0, ?, ?, ?, ?, 0, 0)""",
         (
-            ncode or None,
-            nname,
+            (code or "").strip() or None,
+            (name or "").strip() or (code or "").strip(),
             _normalize_unit_name(unit_name) if unit_name else None,
             now, now, w_uuid, now,
         ),
@@ -141,6 +182,7 @@ def get_or_create_counterparty(
     *,
     name: str | None = None,
     inn: str | None = None,
+    create: bool = True,
 ) -> int | None:
     if not name and not inn:
         return None
@@ -160,6 +202,8 @@ def get_or_create_counterparty(
         for r in rows:
             if _normalize_lookup_value(r["name"]) == nname:
                 return int(r["id"])
+    if not create:
+        return None
     now = _utcnow()
     c_uuid = new_uuid()
     connection.execute(
@@ -180,6 +224,7 @@ def get_or_create_machine(
     name: str | None = None,
     code: str | None = None,
     unit_name: str | None = None,
+    create: bool = True,
 ) -> int | None:
     nname = _normalize_lookup_value(name)
     ncode = _normalize_lookup_value(code)
@@ -194,6 +239,8 @@ def get_or_create_machine(
     for r in rows:
         if nname and _normalize_lookup_value(r["name"]) == nname:
             return int(r["id"])
+    if not create:
+        return None
     now = _utcnow()
     connection.execute(
         """INSERT INTO machines
@@ -274,16 +321,25 @@ def parse_xlsx_bytes(data: bytes) -> list[dict[str, Any]]:
     return result
 
 
-def to_tsv(rows: list[dict[str, Any]], headers: list[str]) -> str:
+def to_tsv(
+    rows: list[dict[str, Any]],
+    headers: list[str],
+    fields: list[str] | None = None,
+) -> str:
     out = io.StringIO()
     writer = csv.writer(out, delimiter="\t", lineterminator="\n")
     writer.writerow(headers)
+    value_keys = fields or headers
     for row in rows:
-        writer.writerow([_format_cell(row.get(h)) for h in headers])
+        writer.writerow([_format_cell(row.get(key)) for key in value_keys])
     return out.getvalue()
 
 
-def to_xlsx_bytes(rows: list[dict[str, Any]], headers: list[str]) -> bytes:
+def to_xlsx_bytes(
+    rows: list[dict[str, Any]],
+    headers: list[str],
+    fields: list[str] | None = None,
+) -> bytes:
     try:
         from openpyxl import Workbook
     except ImportError as e:
@@ -294,8 +350,9 @@ def to_xlsx_bytes(rows: list[dict[str, Any]], headers: list[str]) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.append(headers)
+    value_keys = fields or headers
     for row in rows:
-        ws.append([_coerce_cell(row.get(h)) for h in headers])
+        ws.append([_coerce_cell(row.get(key)) for key in value_keys])
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -356,6 +413,8 @@ def _to_int(value: Any) -> int | None:
 DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
     "material_consumption": {
         "label": "Расход материалов",
+        "document_table": "material_consumptions",
+        "lock_field": "is_posted",
         "line_table": "material_consumption_lines",
         "doc_fk": "document_id",
         "header_columns": ["number", "date", "object_id", "estimate_id", "foreman_id"],
@@ -373,6 +432,8 @@ DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "machinery_usage": {
         "label": "Использование машин",
+        "document_table": "machinery_usage_reports",
+        "lock_field": "is_posted",
         "line_table": "machinery_usage_lines",
         "doc_fk": "document_id",
         "header_columns": ["number", "date", "object_id", "estimate_id", "foreman_id"],
@@ -388,6 +449,8 @@ DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "subcontract_acceptance": {
         "label": "Субподряд",
+        "document_table": "subcontract_acceptances",
+        "lock_field": "is_posted",
         "line_table": "subcontract_acceptance_lines",
         "doc_fk": "document_id",
         "header_columns": ["number", "date", "object_id", "estimate_id"],
@@ -402,6 +465,8 @@ DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "overhead_expense": {
         "label": "Накладные расходы",
+        "document_table": "overhead_expenses",
+        "lock_field": "is_distributed",
         "line_table": "overhead_expense_lines",
         "doc_fk": "document_id",
         "header_columns": ["number", "date", "period"],
@@ -415,6 +480,8 @@ DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "daily_report": {
         "label": "Дневной отчёт",
+        "document_table": "daily_reports",
+        "lock_field": "is_posted",
         "line_table": "daily_report_lines",
         "doc_fk": "report_id",
         "header_columns": ["number", "date", "estimate_id", "foreman_id"],
@@ -430,6 +497,8 @@ DOCUMENT_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "estimate": {
         "label": "Смета",
+        "document_table": "estimates",
+        "lock_field": "is_posted",
         "line_table": "estimate_lines",
         "doc_fk": "estimate_id",
         "header_columns": ["number", "date", "customer_id", "object_id", "contractor_id", "responsible_id", "contract_id"],
@@ -473,6 +542,7 @@ def _resolve_reference(
             name=row.get("material_name") or None,
             unit_name=row.get("unit") or None,
             price=_to_float(row.get("price")),
+            create=create,
         )
         if mid is None:
             warnings.append(
@@ -485,6 +555,7 @@ def _resolve_reference(
             code=row.get("work_code") or None,
             name=row.get("work_name") or None,
             unit_name=row.get("unit") or None,
+            create=create,
         )
         if wid is None and create:
             # already attempted creation; if still None it means no name/code
@@ -501,6 +572,7 @@ def _resolve_reference(
             connection,
             name=row.get("counterparty_name") or None,
             inn=row.get("counterparty_inn") or None,
+            create=create,
         )
         if cid is None:
             warnings.append(
@@ -513,6 +585,7 @@ def _resolve_reference(
             name=row.get("machine_name") or None,
             code=row.get("machine_code") or None,
             unit_name=row.get("unit") or None,
+            create=create,
         )
         if mid is None:
             warnings.append(f"Не удалось сопоставить машину: «{row.get('machine_name')}»")
@@ -546,6 +619,11 @@ def _row_to_line(
         maps = col.get("maps")
         ctype = col.get("type", "text")
 
+        # Snapshot/helper columns are input aliases used by the resolver. They
+        # are not necessarily physical columns on the document line table.
+        if col.get("ref_helper"):
+            continue
+
         if ref:
             value, w = _resolve_reference(connection, ref, row, col.get("create", False))
             warnings.extend(w)
@@ -568,6 +646,25 @@ def _row_to_line(
     return line, warnings
 
 
+def _validate_import_target(
+    connection: sqlite3.Connection,
+    schema: dict[str, Any],
+    doc_id: int,
+) -> str | None:
+    table = schema["document_table"]
+    lock_field = schema["lock_field"]
+    row = connection.execute(
+        f"SELECT uuid, {lock_field} AS is_locked, marked_for_deletion FROM {table} WHERE id = ?",
+        (doc_id,),
+    ).fetchone()
+    if row is None or bool(row["marked_for_deletion"]):
+        raise HTTPException(status_code=404, detail="Document not found")
+    if bool(row["is_locked"]):
+        state = "distributed" if lock_field == "is_distributed" else "posted"
+        raise HTTPException(status_code=409, detail=f"Cannot import lines into a {state} document")
+    return str(row["uuid"]) if row["uuid"] else None
+
+
 def import_document_lines(
     connection: sqlite3.Connection,
     doc_type: str,
@@ -576,6 +673,7 @@ def import_document_lines(
     fmt: str,
     data: str | bytes,
     replace: bool = True,
+    preview: bool = False,
 ) -> dict[str, Any]:
     """Import line items for a document from TSV/JSON/XLSX data.
 
@@ -585,6 +683,10 @@ def import_document_lines(
     schema = DOCUMENT_SCHEMAS.get(doc_type)
     if not schema:
         raise HTTPException(status_code=400, detail=f"Unknown document type: {doc_type}")
+
+    data_size = len(data) if isinstance(data, (bytes, bytearray)) else len(data.encode("utf-8"))
+    if data_size > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=413, detail=f"Import exceeds {MAX_IMPORT_BYTES} bytes")
 
     fmt = (fmt or "tsv").lower()
     if fmt == "tsv":
@@ -608,37 +710,143 @@ def import_document_lines(
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported format: {fmt}")
 
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise HTTPException(status_code=400, detail="Every imported line must be an object")
+    if len(rows) > MAX_IMPORT_ROWS:
+        raise HTTPException(status_code=413, detail=f"Import exceeds {MAX_IMPORT_ROWS} rows")
+
+    document_uuid = _validate_import_target(connection, schema, doc_id)
+
     if not rows:
-        return {"imported": 0, "warnings": ["Нет строк для импорта"], "created_refs": {}}
+        return {"imported": 0, "warnings": ["Нет строк для импорта"], "format": fmt, "preview": preview}
 
-    if replace:
-        connection.execute(
-            f"DELETE FROM {schema['line_table']} WHERE {schema['doc_fk']} = ?",
-            (doc_id,),
-        )
+    savepoint = "ctm_document_import"
+    connection.execute(f"SAVEPOINT {savepoint}")
+    try:
+        table_info = {
+            str(row["name"]): row
+            for row in connection.execute(f"PRAGMA table_info({schema['line_table']})").fetchall()
+        }
+        table_columns = set(table_info)
+        if replace:
+            if "uuid" in table_columns:
+                old_lines = connection.execute(
+                    f"SELECT uuid FROM {schema['line_table']} WHERE {schema['doc_fk']} = ?",
+                    (doc_id,),
+                ).fetchall()
+                for old_line in old_lines:
+                    if old_line["uuid"]:
+                        register_sync_change(
+                            connection,
+                            entity_type=schema["line_table"],
+                            entity_uuid=str(old_line["uuid"]),
+                            operation="DELETE",
+                        )
+            connection.execute(
+                f"DELETE FROM {schema['line_table']} WHERE {schema['doc_fk']} = ?",
+                (doc_id,),
+            )
+        imported = 0
+        warnings: list[str] = []
+        line_number = 0
+        for row in rows:
+            if not any(str(value or "").strip() for value in row.values()):
+                continue
+            line_number += 1
+            line, row_warnings = _row_to_line(connection, schema, row)
+            warnings.extend(row_warnings)
+            line["line_number"] = line_number
+            line[schema["doc_fk"]] = doc_id
+            now = _utcnow()
+            if "uuid" in table_columns:
+                line["uuid"] = new_uuid()
+            if "created_at" in table_columns:
+                line["created_at"] = now
+            if "modified_at" in table_columns:
+                line["modified_at"] = now
+            if "updated_at" in table_columns:
+                line["updated_at"] = now
+            if "is_deleted" in table_columns:
+                line["is_deleted"] = 0
+            if "marked_for_deletion" in table_columns:
+                line["marked_for_deletion"] = 0
+            line = {
+                key: value
+                for key, value in line.items()
+                if key in table_columns
+                and not (
+                    value is None
+                    and bool(table_info[key]["notnull"])
+                    and table_info[key]["dflt_value"] is not None
+                )
+            }
+            cols = ", ".join(line.keys())
+            placeholders = ", ".join(["?"] * len(line))
+            connection.execute(
+                f"INSERT INTO {schema['line_table']} ({cols}) VALUES ({placeholders})",
+                list(line.values()),
+            )
+            if line.get("uuid"):
+                register_sync_change(
+                    connection,
+                    entity_type=schema["line_table"],
+                    entity_uuid=str(line["uuid"]),
+                    operation="INSERT",
+                )
+            imported += 1
 
-    imported = 0
-    warnings: list[str] = []
-    line_number = 0
-    for row in rows:
-        # skip fully empty rows
-        if not any(str(v or "").strip() for v in row.values()):
-            continue
-        line_number += 1
-        line, w = _row_to_line(connection, schema, row)
-        warnings.extend(w)
-        line["line_number"] = line_number
-        line[schema["doc_fk"]] = doc_id
-        cols = ", ".join(line.keys())
-        placeholders = ", ".join(["?"] * len(line))
-        connection.execute(
-            f"INSERT INTO {schema['line_table']} ({cols}) VALUES ({placeholders})",
-            list(line.values()),
-        )
-        imported += 1
+        if doc_type == "estimate":
+            totals = connection.execute(
+                """SELECT COALESCE(SUM(sum), 0) AS total_sum,
+                          COALESCE(SUM(planned_labor), 0) AS total_labor
+                   FROM estimate_lines
+                   WHERE estimate_id = ? AND marked_for_deletion = 0""",
+                (doc_id,),
+            ).fetchone()
+            now = _utcnow()
+            connection.execute(
+                """UPDATE estimates
+                   SET total_sum = ?, total_labor = ?, modified_at = ?, updated_at = ?
+                   WHERE id = ?""",
+                (totals["total_sum"], totals["total_labor"], now, now, doc_id),
+            )
+        else:
+            header_columns = {
+                str(row["name"])
+                for row in connection.execute(
+                    f"PRAGMA table_info({schema['document_table']})"
+                ).fetchall()
+            }
+            timestamp_columns = [
+                column for column in ("modified_at", "updated_at") if column in header_columns
+            ]
+            if timestamp_columns:
+                now = _utcnow()
+                assignments = ", ".join(f"{column} = ?" for column in timestamp_columns)
+                connection.execute(
+                    f"UPDATE {schema['document_table']} SET {assignments} WHERE id = ?",
+                    [now] * len(timestamp_columns) + [doc_id],
+                )
 
-    connection.commit()
-    return {"imported": imported, "warnings": warnings, "format": fmt}
+        if document_uuid:
+            register_sync_change(
+                connection,
+                entity_type=schema["document_table"],
+                entity_uuid=document_uuid,
+                operation="UPDATE",
+            )
+
+        result = {"imported": imported, "warnings": warnings, "format": fmt, "preview": preview}
+        if preview:
+            connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+        if not preview:
+            connection.commit()
+        return result
+    except Exception:
+        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+        raise
 
 
 # ── Export ─────────────────────────────────────────────────────────────────
@@ -663,7 +871,7 @@ def _line_to_export_row(
                     "SELECT name, code, unit_name FROM materials WHERE id = ?", (mid,)
                 ).fetchone()
                 if m:
-                    name, code = m["name"], m["code"]
+                    name, code, unit = m["name"], m["code"], m["unit_name"]
             row["material_name"] = name or line.get("material_name") or ""
             row["material_code"] = code or ""
             row["unit"] = unit or line.get("unit") or ""
@@ -719,9 +927,11 @@ def _line_to_export_row(
             row["cost_element_code"] = code or ""
             continue
         if ref == "unit":
-            row[field] = line.get(field) or ""
+            row[field] = line.get(field) or row.get(field) or ""
             continue
         # plain
+        if col.get("ref_helper") and row.get(field):
+            continue
         row[field] = line.get(field, "")
     return row
 
@@ -746,6 +956,7 @@ def export_document(
 
     fmt = (fmt or "tsv").lower()
     headers = [col["label"] for col in schema["columns"]]
+    fields = [col["field"] for col in schema["columns"]]
 
     line_rows_raw = connection.execute(
         f"SELECT * FROM {schema['line_table']} WHERE {schema['doc_fk']} = ? ORDER BY line_number",
@@ -757,7 +968,7 @@ def export_document(
         export_rows.append(_line_to_export_row(connection, schema, line))
 
     if fmt == "tsv":
-        body = to_tsv(export_rows, headers)
+        body = to_tsv(export_rows, headers, fields)
         return {
             "body": body,
             "media_type": "text/tab-separated-values; charset=utf-8",
@@ -775,7 +986,7 @@ def export_document(
             "filename": f"{doc_type}_{doc_id}.json",
         }
     if fmt == "xlsx":
-        body = to_xlsx_bytes(export_rows, headers)
+        body = to_xlsx_bytes(export_rows, headers, fields)
         return {
             "body": body,
             "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

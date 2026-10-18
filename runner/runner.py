@@ -56,7 +56,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 import webbrowser
-from tkinter import messagebox, scrolledtext, ttk
+from tkinter import messagebox, scrolledtext, simpledialog, ttk
 
 try:
     import pystray
@@ -93,8 +93,11 @@ LOCAL_DB_PATH = CURRENT_DIR / "construction.db"
 REMOTE_DB_PATH = "/srv/ctm/data/construction-ctm2.db"
 
 # Python interpreter that has paramiko (the portable .python does NOT).
-# Used for deploy_prod.py (SSH password auth to prod LAN IP).
+# Used for deploy_prod.py / push_db.py / prod_service.py (SSH to prod LAN IP).
 PROD_PARAMIKO_PY = r"D:\ptn313\python.exe"
+# Dedicated no-passphrase deploy key (see runner/prod_ssh.py). When present,
+# prod auth is key-based and no kassir password prompt is needed.
+PROD_DEPLOY_KEY = os.path.join(os.path.expanduser("~"), ".ssh", "ctm_prod_ed25519")
 MAX_LOG_LINES = 2000
 _TAG_RE = re.compile(r"^\[([^\]]+)\]")
 # Start-Transcript session header/footer lines to drop from deploy/push/prod tabs.
@@ -301,8 +304,8 @@ class RunnerApp:
         )
         self.pushdb_btn.pack(side=tk.RIGHT)
 
-        # --- Prod service (remote api container) ---
-        prod_frame = tk.LabelFrame(top, text=" Prod service (remote) ", padx=10, pady=8)
+        # --- Prod Docker / CTM control (remote LAN) ---
+        prod_frame = tk.LabelFrame(top, text=" Prod Docker / CTM (LAN) ", padx=10, pady=8)
         prod_frame.pack(fill=tk.X, pady=(0, 6))
         prod_frame.config(font=self.font_b)
 
@@ -310,11 +313,26 @@ class RunnerApp:
         prod_row.pack(fill=tk.X)
         prod_desc = tk.Label(
             prod_row,
-            text="docker compose start/stop/restart api @ " + PROD_URL.split("/")[2],
+            text="Docker Compose @ 192.168.0.39 — controls do not rebuild or deploy",
             anchor="w", fg="#7f8c8d",
         )
         prod_desc.config(font=self.font_sm)
         prod_desc.pack(side=tk.LEFT)
+        self.prod_target = tk.StringVar(value="stack")
+        self.prod_target_box = ttk.Combobox(
+            prod_row, textvariable=self.prod_target,
+            values=("stack", "api", "frontend", "reverse-proxy"),
+            width=14, state="readonly",
+        )
+        self.prod_target_box.pack(side=tk.LEFT, padx=(10, 0))
+        self.prod_status_btn = tk.Button(
+            prod_row, text="Status", width=8, command=self.prod_status,
+        )
+        self.prod_status_btn.pack(side=tk.RIGHT)
+        self.prod_logs_btn = tk.Button(
+            prod_row, text="Logs", width=8, command=self.prod_logs,
+        )
+        self.prod_logs_btn.pack(side=tk.RIGHT, padx=(0, 4))
         self.prod_start_btn = tk.Button(
             prod_row, text="Start", width=8, command=self.start_prod_api,
         )
@@ -327,6 +345,13 @@ class RunnerApp:
             prod_row, text="Restart", width=9, command=self.restart_prod_api,
         )
         self.prod_restart_btn.pack(side=tk.RIGHT, padx=(0, 4))
+
+        prod_row2 = tk.Frame(prod_frame)
+        prod_row2.pack(fill=tk.X, pady=(5, 0))
+        self.prod_up_btn = tk.Button(
+            prod_row2, text="Reconcile / Start selected", command=self.prod_up,
+        )
+        self.prod_up_btn.pack(side=tk.RIGHT)
 
         # --- Log (tabbed: one tab per operation + a combined "All") ---
         log_lbl = tk.Label(self.root, text="Output", anchor="w")
@@ -473,14 +498,17 @@ class RunnerApp:
             self.check_prod()
 
     def _spawn(self, cwd: Path, args: list[str],
-               tag: str, on_exit=None) -> subprocess.Popen | None:
+               tag: str, on_exit=None, env_extra: dict[str, str] | None = None) -> subprocess.Popen | None:
         try:
+            child_env = _cmd_env()
+            if env_extra:
+                child_env.update(env_extra)
             proc = subprocess.Popen(
                 args,
                 cwd=str(cwd),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                env=_cmd_env(),
+                env=child_env,
                 creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP
                                if os.name == "nt" else 0),
                 start_new_session=(os.name != "nt"),
@@ -678,6 +706,19 @@ class RunnerApp:
         )
 
     # ---- Deploy --------------------------------------------------------------
+    def _kassir_auth_env(self) -> dict[str, str] | None:
+        """Env for prod auth. Empty dict when the deploy SSH key exists
+        (key-first auth, no secrets needed); otherwise prompts for the
+        kassir password. None = user cancelled the prompt."""
+        if os.path.exists(PROD_DEPLOY_KEY):
+            return {}
+        password = simpledialog.askstring(
+            TITLE, "kassir SSH password:", show="*", parent=self.root,
+        )
+        if not password:
+            return None
+        return {"CTM_KASSIR_PASS": password}
+
     def deploy(self) -> None:
         if self.deploy_proc and self.deploy_proc.poll() is None:
             messagebox.showinfo(TITLE, "A deploy is already running.")
@@ -694,8 +735,15 @@ class RunnerApp:
         if not script.exists():
             messagebox.showerror(TITLE, f"Not found:\n{script}")
             return
+        auth_env = self._kassir_auth_env()
+        if auth_env is None:
+            return
         self._show_tab("deploy")
-        self._log("[deploy] Starting paramiko deploy to prod ...")
+        if auth_env:
+            self._log("[deploy] Starting paramiko deploy to prod (password) ...")
+        else:
+            self._log(f"[deploy] Starting paramiko deploy to prod "
+                      f"(key: {PROD_DEPLOY_KEY}) ...")
         self.deploy_btn.config(state=tk.DISABLED)
 
         def _done(rc: int) -> None:
@@ -708,6 +756,7 @@ class RunnerApp:
             [PROD_PARAMIKO_PY, str(script), "--repo-root", str(BASE_DIR)],
             tag="deploy",
             on_exit=_done,
+            env_extra=auth_env,
         )
         if self.deploy_proc is None:
             self.deploy_btn.config(state=tk.NORMAL)
@@ -751,6 +800,9 @@ class RunnerApp:
         )
         if not confirmed:
             return
+        auth_env = self._kassir_auth_env()
+        if auth_env is None:
+            return
         self._show_tab("pushdb")
         self._log(f"[pushdb] {LOCAL_DB_PATH.name} -> prod:{REMOTE_DB_PATH} "
                   "(backup + api restart)")
@@ -766,23 +818,35 @@ class RunnerApp:
             [PROD_PARAMIKO_PY, str(script), "--repo-root", str(BASE_DIR)],
             tag="pushdb",
             on_exit=_done,
+            env_extra=auth_env,
         )
         if self.pushdb_proc is None:
             self.pushdb_btn.config(state=tk.NORMAL)
 
-    # ---- Prod service control ----------------------------------------------
+    # ---- Prod Docker / CTM control -----------------------------------------
     def _run_prod_service(self, action: str, label: str) -> None:
-        """Spawn prod-service.ps1 <action> in a console window (SSH to prod)."""
+        """Run one explicit LAN Docker Compose operation on the selected target."""
         if self.prodsvc_proc and self.prodsvc_proc.poll() is None:
-            messagebox.showinfo(TITLE, "A prod service operation is already running.")
+            messagebox.showinfo(TITLE, "A prod Docker operation is already running.")
             return
+        target = self.prod_target.get()
+        if action == "stop":
+            confirmed = messagebox.askyesno(
+                TITLE,
+                f"Stop {target} on production?\n\n"
+                "This immediately makes the selected CTM service unavailable.",
+                icon="warning",
+            )
+            if not confirmed:
+                return
         script = Path(_RUNNER_DIR) / "prod-service.ps1"
-        self._log(f"[prod] {label} api container on prod ...")
+        self._log(f"[prod] {label} {target} on prod via LAN ...")
         on_done = None
-        if action in ("start", "restart"):
+        if action in ("start", "restart", "up"):
             on_done = lambda rc: self.root.after(0, self.check_prod)
         self.prodsvc_proc = self._spawn_console_script(
-            script, "prod", extra_args=["-Action", action], on_done=on_done,
+            script, "prod",
+            extra_args=["-Action", action, "-Target", target], on_done=on_done,
         )
 
     def start_prod_api(self) -> None:
@@ -793,6 +857,15 @@ class RunnerApp:
 
     def restart_prod_api(self) -> None:
         self._run_prod_service("restart", "restart")
+
+    def prod_status(self) -> None:
+        self._run_prod_service("status", "checking")
+
+    def prod_logs(self) -> None:
+        self._run_prod_service("logs", "reading logs for")
+
+    def prod_up(self) -> None:
+        self._run_prod_service("up", "reconciling")
 
     # ---- log ----------------------------------------------------------------
     def _log(self, line: str) -> None:

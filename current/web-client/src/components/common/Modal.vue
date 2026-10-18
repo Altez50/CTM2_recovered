@@ -121,7 +121,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 1rem;
-  z-index: 50;
+  z-index: 10001;
 }
 
 .dialog {

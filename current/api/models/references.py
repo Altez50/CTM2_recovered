@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from fastapi import HTTPException
 
 
-ReferenceKind = Literal["counterparties", "objects", "works", "persons", "organizations", "contracts", "materials"]
+ReferenceKind = Literal["counterparties", "objects", "works", "persons", "organizations", "contracts", "materials", "warehouses", "material-packages", "material-characteristics", "material-series"]
 
 
 class CounterpartyPayload(BaseModel):
@@ -62,6 +63,8 @@ class OrganizationPayload(BaseModel):
 
 
 class ContractPayload(BaseModel):
+    credit_limit: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    credit_limit_strict: bool = False
     number: str = Field(min_length=1, max_length=100)
     date: str | None = Field(default=None, max_length=20)
     organization_id: int | None = None
@@ -84,10 +87,42 @@ class MaterialPayload(BaseModel):
     code: str | None = Field(default=None, max_length=64)
     unit_id: int | None = None
     price: float = Field(default=0, ge=0)
+    parent_id: int | None = None
+    is_group: bool = False
     marked_for_deletion: bool = False
 
 
+class WarehousePayload(BaseModel):
+    order_issue_enabled: bool = False
+    order_receipt_enabled: bool = False
+    name: str = Field(min_length=1, max_length=255)
+    code: str = Field(default="", max_length=64)
+    organization_id: int
+    default_object_id: int | None = None
+    responsible_id: int | None = None
+    address: str | None = Field(default=None, max_length=255)
+    marked_for_deletion: bool = False
+
+
+class MaterialAnalyticPayload(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    name: str = Field(min_length=1, max_length=255)
+    material_id: int = Field(gt=0)
+    marked_for_deletion: bool = False
+
+
+class MaterialPackagePayload(MaterialAnalyticPayload):
+    factor: float = Field(gt=0, allow_inf_nan=False)
+
+
+class MaterialSeriesPayload(MaterialAnalyticPayload):
+    characteristic_id: int | None = Field(default=None, gt=0)
+
+
 REFERENCE_MODEL_MAP = {
+    'material-packages': MaterialPackagePayload,
+    'material-characteristics': MaterialAnalyticPayload,
+    'material-series': MaterialSeriesPayload,
     "counterparties": CounterpartyPayload,
     "objects": ObjectPayload,
     "works": WorkPayload,
@@ -95,11 +130,17 @@ REFERENCE_MODEL_MAP = {
     "organizations": OrganizationPayload,
     "contracts": ContractPayload,
     "materials": MaterialPayload,
+    "warehouses": WarehousePayload,
 }
 
 
 def validate_reference_payload(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     if kind not in REFERENCE_MODEL_MAP:
         raise ValueError(f"Unsupported reference kind: {kind}")
-    model = REFERENCE_MODEL_MAP[kind](**payload)
+    try:
+        model = REFERENCE_MODEL_MAP[kind](**payload)
+    except ValidationError as exc:
+        if kind.startswith('material-'):
+            raise HTTPException(status_code=422, detail=exc.errors(include_context=False)) from exc
+        raise
     return model.model_dump()

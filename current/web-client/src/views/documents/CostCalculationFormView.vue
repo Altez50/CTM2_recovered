@@ -3,10 +3,10 @@
     <section class="panel"><div class="panel-body">
       <p v-if="error" class="page-subtitle" style="color: var(--danger)">{{ error }}</p>
       <div class="form-grid doc-header-grid">
-        <FormField label="Номер"><input v-model="form.number" class="input" placeholder="авто" /></FormField>
-        <FormField label="Дата"><input v-model="form.date" class="input" type="date" /></FormField>
-        <FormField label="Период"><input v-model="form.period" class="input" placeholder="YYYY-MM" /></FormField>
-        <FormField label="Объект (0=все)"><input v-model.number="form.object_id" class="input" type="number" min="0" /></FormField>
+        <FormField label="Номер"><input v-model="form.number" class="input" placeholder="авто" :disabled="!canEdit" /></FormField>
+        <FormField label="Дата"><input v-model="form.date" class="input" type="date" :disabled="!canEdit" /></FormField>
+        <FormField label="Период"><input v-model="form.period" class="input" placeholder="YYYY-MM" :disabled="!canEdit" /></FormField>
+        <FormField label="Объект (0=все)"><input v-model.number="form.object_id" class="input" type="number" min="0" :disabled="!canEdit" /></FormField>
       </div>
       <div class="toolbar" style="margin-top: 1rem">
         <button class="button button-primary" title="Сохранить" :disabled="!canEdit" @click="save">💾</button>
@@ -18,6 +18,9 @@
       <p v-if="result" style="margin-top: 1rem">
         Рассчитано записей: <strong>{{ result.record_count }}</strong>. Статус: <strong>{{ result.status }}</strong>
       </p>
+      <ul v-if="result?.warnings?.length" class="calculation-warnings">
+        <li v-for="warning in result.warnings" :key="warning">{{ warning }}</li>
+      </ul>
     </div></section>
   </div>
 </template>
@@ -38,7 +41,7 @@ const isEdit = computed(() => !!(props.id || route.params.id))
 useHeaderBar(props.tabId, computed(() => isEdit.value ? 'Расчёт себестоимости' : 'Новый расчёт себестоимости'), ref([]))
 const error = ref(''); const today = new Date().toISOString().slice(0, 10); const thisMonth = today.slice(0, 7)
 const form = ref<CostCalculation>({ number: '', period: thisMonth, date: today, object_id: 0, status: 'draft' })
-const result = ref<{ record_count: number; status: string } | null>(null)
+const result = ref<{ record_count: number; status: string; warnings?: string[] } | null>(null)
 // Dirty-flag / unsaved-changes tracking
 const savedSnapshot = ref<string>('')
 const isDirty = computed(() => JSON.stringify(buildPayload(form.value)) !== savedSnapshot.value)
@@ -47,7 +50,7 @@ function markSaved() { savedSnapshot.value = JSON.stringify(buildPayload(form.va
 
 const canManage = computed(() => auth.canManageCost)
 // A posted calculation is locked; editing header is allowed in draft/calculated.
-const canEdit = computed(() => (form.value.status ?? 'draft') !== 'posted')
+const canEdit = computed(() => auth.canManageCost && (form.value.status ?? 'draft') !== 'posted')
 
 function statusClass(s: string) { return s === 'posted' ? 'posted' : s === 'calculated' ? 'success' : 'draft' }
 function statusLabel(s: string) { return s === 'posted' ? 'Проведен' : s === 'calculated' ? 'Рассчитан' : 'Черновик' }
@@ -92,4 +95,5 @@ onMounted(async () => { if (isEdit.value) { try { const r = await getCostCalcula
 .doc-header-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }
 .button-success { background: var(--success, #16a34a); color: #fff; } .button-warning { background: var(--warning, #f59e0b); color: #fff; }
 .status-pill.success { background: rgba(34, 197, 94, 0.12); color: var(--success, #16a34a); }
+.calculation-warnings { color: var(--warning, #b45309); margin-top: 0.75rem; }
 </style>

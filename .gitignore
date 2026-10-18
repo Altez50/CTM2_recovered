@@ -43,6 +43,9 @@ coverage/
 test-results/
 playwright-report/
 
+# Local 1C reconciliation credentials, source samples and reports
+data/trade-harness/
+
 # Deploy local overrides
 deploy/.deploy.*.env
 

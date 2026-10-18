@@ -1,8 +1,12 @@
 # Спецификация инженерного пункта «Таблицы» (просмотрщик + консоль запросов)
 
-Версия: 0.1 (черновик)
-Обновлено: 2026-08-02
-Статус: требования добавляются итеративно. Каждая итерация нумеруется в разделе 10.
+Версия: 0.2
+Обновлено: 2026-09-02
+Статус реализации: **частично**. Каталог, просмотрщик, read-only консоль,
+сохранённые запросы, CSV и печать реализованы; XLSX, параметры/история и
+автоматические security/performance тесты отсутствуют. Пользовательский `LIMIT`
+пока не зажимается до `MAX_ROWS`. Проверено по коду: 2026-09-02
+(`SPEC_REVIEW.md`).
 
 ---
 
@@ -70,16 +74,16 @@ PostgreSQL (продуктив, см. `db/dialect.py`, `db/postgres_backend.py`)
 
 | Возможность | Где | Примечание |
 |---|---|---|
-| Серверная интроспекция схемы | [db/dialect.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/db/dialect.py) | `table_exists`, `table_columns` — работают и для SQLite, и для Postgres |
-| Слой БД с поддержкой диалектов | [db/base.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/db/base.py), [db/postgres_backend.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/db/postgres_backend.py), [db/sqlite_backend.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/db/sqlite_backend.py) | единый `DbConnection` |
-| Серверная сортировка/отбор по вайтлисту | [list_query.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/list_query.py) | `resolve_sort`, `order_by_clause`, `apply_quick_filters`, `parse_quick_filters` |
-| Настройки пользователя (колонки, сортировка) | [routers/system.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/routers/system.py) | `GET/PUT/DELETE /api/system/user-settings/{form_name}`, таблица `user_settings` |
-| Проверка ролей | [auth_dependencies.py:142](file:///f:/2026f/ctm3/CTM2_recovered/current/api/auth_dependencies.py) | `require_roles('admin', ...)` |
-| Единый компонент таблицы | [DataTable.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/components/common/DataTable.vue) | сортировка, строка фильтра, выделение |
-| Единая панель команд | [ListCommandBar.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/components/documents/ListCommandBar.vue) | Обновить/Фильтр/Настройка/Экспорт |
-| Диалог настройки колонок | [ListSettingsDialog.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/components/documents/ListSettingsDialog.vue) | видимость/порядок/по умолчанию |
-| Экспорт отчётов | [utils/reportExport.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/utils/reportExport.ts) | Excel/CSV клиентский |
-| Печать | [printing.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/printing.py) | серверная печать документов |
+| Серверная интроспекция схемы | [`db/dialect.py`](current/api/db/dialect.py) | `table_exists`, `table_columns` — работают и для SQLite, и для Postgres |
+| Слой БД с поддержкой диалектов | [`db/base.py`](current/api/db/base.py), [`db/postgres_backend.py`](current/api/db/postgres_backend.py), [`db/sqlite_backend.py`](current/api/db/sqlite_backend.py) | единый `DbConnection` |
+| Серверная сортировка/отбор по вайтлисту | [`list_query.py`](current/api/list_query.py) | `resolve_sort`, `order_by_clause`, `apply_quick_filters`, `parse_quick_filters` |
+| Настройки пользователя (колонки, сортировка) | [`routers/system.py`](current/api/routers/system.py) | `GET/PUT/DELETE /api/system/user-settings/{form_name}`, таблица `user_settings` |
+| Проверка ролей | [`auth_dependencies.py`](current/api/auth_dependencies.py) | `require_roles('admin', ...)` |
+| Единый компонент таблицы | [`DataTable.vue`](current/web-client/src/components/common/DataTable.vue) | сортировка, строка фильтра, выделение |
+| Единая панель команд | [`ListCommandBar.vue`](current/web-client/src/components/documents/ListCommandBar.vue) | Обновить/Фильтр/Настройка/Экспорт |
+| Диалог настройки колонок | [`ListSettingsDialog.vue`](current/web-client/src/components/documents/ListSettingsDialog.vue) | видимость/порядок/по умолчанию |
+| Экспорт отчётов | [`utils/reportExport.ts`](current/web-client/src/utils/reportExport.ts) | Excel/CSV клиентский |
+| Печать | [`printing.py`](current/api/printing.py) | серверная печать документов |
 
 ### 2.2. Чего нет (цель итерации)
 
@@ -365,15 +369,15 @@ GET /api/engineering/tables/{table_name}
 
 ### 5.1. Роутер и меню
 
-- [router/index.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/router/index.ts):
+- [`router/index.ts`](current/web-client/src/router/index.ts):
   добавить роуты `/engineering/tables` и `/engineering/tables/console`
   (`meta: { requiresAdmin: true }`), guard в `beforeEach`.
-- [AppSidebarNew.vue](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/components/layout/AppSidebarNew.vue):
+- [`AppSidebarNew.vue`](current/web-client/src/components/layout/AppSidebarNew.vue):
   секция `engineering` («Инженерия») с пунктом «Таблицы», `v-if="auth.isAdmin"`.
 
 ### 5.2. API-клиент
 
-Новый модуль [api/engineering.ts](file:///f:/2026f/ctm3/CTM2_recovered/current/web-client/src/api/engineering.ts):
+Новый модуль [`api/engineering.ts`](current/web-client/src/api/engineering.ts):
 
 ```ts
 export function getEngineeringCatalog(): Promise<EngineeringCatalog>
@@ -422,7 +426,7 @@ export function executeQuery(text: string, opts): Promise<QueryResult>
 
 Новых таблиц не требуется.
 
-- **`user_settings`** (существует, [database.py:786](file:///f:/2026f/ctm3/CTM2_recovered/current/api/database.py)):
+- **`user_settings`** (существует, [`database.py`](current/api/database.py)):
   - `form_name='tables:<table>'`, ключ `columns` — состав/порядок колонок
     просмотрщика (как в DOCUMENT_LIST_SPEC.md раздел 6);
   - `form_name='tables:console'`, ключ `saved_queries` — массив сохранённых
@@ -448,8 +452,10 @@ export function executeQuery(text: string, opts): Promise<QueryResult>
    работает; агрегаты `GROUP BY`/`SUM` и `ORDER BY`/`LIMIT` работают.
 6. Консоль: попытка `INSERT/UPDATE/DELETE/DDL` или обращения к технической таблице
    отклоняется с понятным сообщением (400).
-7. Консоль: превышение `MAX_ROWS` или таймаута возвращает truncated/ошибку без
-   зависания сервера; read-only подтверждён (модификация невозможна).
+7. Консоль: фактически полученное число строк всегда `<= MAX_ROWS`, включая
+   пользовательские `LIMIT`, CTE и вложенные запросы; превышение лимита или
+   таймаута возвращает truncated/ошибку без зависания сервера; read-only
+   подтверждён (модификация невозможна).
 8. Результат: печать (`window.print`) и экспорт в xlsx/csv формируют корректный
    документ с синонимами и итогами.
 9. Сохранённые запросы сохраняются/восстанавливаются по пользователю.
@@ -557,3 +563,4 @@ export function executeQuery(text: string, opts): Promise<QueryResult>
 | Версия | Дата | Изменения |
 |---|---|---|
 | 0.1 | 2026-08-02 | Первичная спецификация: просмотрщик таблиц с синонимами, консоль запросов (ANSI-SQL + синонимы), сохранённые запросы, печать/экспорт, анализ выполнимости (раздел 9). |
+| 0.2 | 2026-09-02 | Зафиксирован частичный статус и уточнён обязательный hard cap результата независимо от пользовательского LIMIT. |

@@ -3,6 +3,11 @@
 Scope: backend (`current/api`) + frontend (`current/web-client`) of the **cost accounting**
 subsystem. Focus on form behavior as requested.
 
+Проверено повторно: 2026-09-02. Таблицы статусов ниже являются историческим
+рабочим журналом и не доказывают прохождение тестов: автоматического backend suite
+в репозитории нет. Актуальный gap-анализ и порядок автоматизации находятся в
+`SPEC_REVIEW.md` и `DEVELOPMENT_PLAN.md`.
+
 Status legend: ⬜ planned · 🔬 under test · ✅ fixed · ⚠️ known/deferred
 
 ---

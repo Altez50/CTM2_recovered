@@ -2,6 +2,22 @@
 
 > Session: 2026-08-01. Captures the broken deploy-to-prod investigation,
 > fixes applied, environment, and what remains. Read this first in a new session.
+> Updated 2026-09-02: prod auth switched to a dedicated SSH key (see "Key auth").
+
+## Key auth (2026-09-02 — deploys no longer need the kassir password)
+- Dedicated no-passphrase ed25519 key on the workstation:
+  `~\.ssh\ctm_prod_ed25519` (+ `.pub`), installed into
+  `kassir@192.168.0.39:~/.ssh/authorized_keys` (3 keys there now).
+- Verified: key login works, `sudo -n` is passwordless for kassir
+  (deploy's `sudo bash /tmp/deploy-local.sh` needs no secrets).
+- Shared auth module `runner/prod_ssh.py`: tries `$CTM_DEPLOY_KEY`,
+  then `~\.ssh\ctm_prod_ed25519`, then falls back to `CTM_KASSIR_PASS`.
+  All three engines (`deploy_prod.py`, `push_db.py`, `prod_service.py`) use it.
+- `runner.py` `_kassir_auth_env()`: skips the password prompt entirely when
+  the key file exists (Deploy / Push DB buttons now run unattended).
+- The three .ps1 wrappers also skip the prompt when the key exists.
+- The .ps1 wrappers got a UTF-8 BOM (they contain Cyrillic/em-dashes; without
+  BOM Windows PowerShell 5.1 misparses them — pwsh was unaffected).
 
 ## Original problem
 `runner.py` "Deploy to prod" leaves the **old version** running on production.
@@ -81,13 +97,19 @@ failed or was skipped during the last deploy:
 - Method: acme.sh + reg.ru DNS-01 (see "Cert renewal" section below).
 
 ## What remains (NOT yet done)
-1. **The prod app images are STILL the old build.** The cert is fixed, but the
-   CTM app version on prod has NOT been redeployed with the hardened script yet.
-   → **Next step: re-run "Deploy to Prod" from the runner** and confirm the new
-   `Confirm-Deploy` verification passes (both stamps = `$buildVer`, both Up).
-   Then `curl https://abitek.su:18443/api/health` should include `build`+`schema`.
-2. If the hardened deploy still fails, inspect `docker-compose logs api frontend`
-   on prod for the build error.
+1. ~~Prod app images still old build~~ DONE 2026-09-02: deploy via key auth
+   succeeded; `https://abitek.su:18443/api/health` returns
+   `build 30551cf-dirty + schema`, `/ctm/build-version.txt` = `30551cf-dirty`.
+2. Compose blocker fixed 2026-09-02: `${VAR:?msg}` interpolation is NOT
+   supported by prod docker-compose 1.17 ("Invalid interpolation format").
+   Removed from `deploy/docker-compose.yml` (secrets flow via
+   `env_file: .deploy.kassir.env` instead); the fail-fast check now lives in
+   `DEPLOY_SH` inside `runner/deploy_prod.py`. `SYNC_TOKEN` was also missing
+   and was generated into `deploy/.deploy.kassir.env` (api requires it,
+   ≥24 chars, plus JWT_SECRET_KEY ≥32 chars in production).
+3. Hygiene debt: `deploy/.deploy.kassir.env` is git-TRACKED and contains
+   JWT_SECRET_KEY + SYNC_TOKEN values. Consider untracking it
+   (git rm --cached + .gitignore) and managing it on prod only.
 
 ## Environment
 

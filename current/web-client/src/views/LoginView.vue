@@ -33,6 +33,10 @@
           <strong>Демо-учетные записи</strong>
           <div>`admin / admin`, `manager / manager`, `foreman / foreman`</div>
         </div>
+
+        <a class="product-link" href="/ctm/ctm-one-pager.html" target="_blank" rel="noopener">
+          О CTM: возможности для строительного подрядчика
+        </a>
       </div>
     </section>
   </main>
@@ -112,5 +116,15 @@ async function submit() {
   padding: 1rem;
   background: var(--accent-ghost);
   color: var(--text-soft);
+}
+
+.product-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.product-link:hover {
+  text-decoration: underline;
 }
 </style>

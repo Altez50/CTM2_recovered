@@ -1,0 +1,40 @@
+{
+  "id": "trade-v1",
+  "organizations": [
+    "A",
+    "B"
+  ],
+  "counterparties": [
+    "X",
+    "Y"
+  ],
+  "contracts": {
+    "AX1": [
+      "A",
+      "X"
+    ],
+    "AX2": [
+      "A",
+      "X"
+    ],
+    "AY1": [
+      "A",
+      "Y"
+    ],
+    "BX1": [
+      "B",
+      "X"
+    ]
+  },
+  "warehouses": {
+    "A1": "A",
+    "A2": "A",
+    "B1": "B"
+  },
+  "currency": "RUB",
+  "vat_rate": 20,
+  "payment_deferral_days": 10,
+  "cost_policy": "weighted_average",
+  "isolation": "fresh_database_per_scenario",
+  "external_transports": "emulators_only"
+}

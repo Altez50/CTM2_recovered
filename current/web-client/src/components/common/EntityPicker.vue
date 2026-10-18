@@ -250,6 +250,9 @@ function clear() {
 }
 
 const LABEL_FIELDS: Record<ReferenceKind, string> = {
+  'material-packages': 'name',
+  'material-characteristics': 'name',
+  'material-series': 'name',
   counterparties: 'name',
   objects: 'name',
   works: 'name',
@@ -257,6 +260,7 @@ const LABEL_FIELDS: Record<ReferenceKind, string> = {
   organizations: 'name',
   contracts: 'number',
   materials: 'name',
+  warehouses: 'name',
 }
 
 function onEdited(record: ReferenceRecordLike) {
@@ -265,9 +269,9 @@ function onEdited(record: ReferenceRecordLike) {
   const label = String(record[labelField] ?? '')
   if (createMode.value && record.id) {
     emit('update:modelValue', record.id)
-    emit('change', { id: record.id, label })
+    emit('change', { id: record.id, label, meta: { ...record } })
   } else {
-    emit('change', { id: props.modelValue ?? 0, label })
+    emit('change', { id: props.modelValue ?? 0, label, meta: { ...record } })
   }
   createMode.value = false
   if (open.value) {

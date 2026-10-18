@@ -89,6 +89,7 @@ class PaymentSchedule(PaymentScheduleBase):
 
 
 class PaymentTransactionBase(BaseModel):
+    allow_advance: bool = False
     number: str = Field(default="", max_length=100)
     date: date
     direction: PaymentDirection = "outgoing"

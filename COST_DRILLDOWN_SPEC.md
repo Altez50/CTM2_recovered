@@ -1,8 +1,10 @@
 # Спецификация механизма Drilldown — расшифровка итоговых записей отчётов себестоимости
 
-Версия: 0.1 (черновик)
-Обновлено: 2026-08-01
-Статус: требования добавляются итеративно.
+Версия: 0.2
+Обновлено: 2026-09-02
+Статус реализации: **частично**. Три endpoint'а, диалог и точки входа в четырёх
+отчётах существуют; составной факт с накладными, экспорт, индексы и acceptance-
+тесты не закрыты. Проверено по коду: 2026-09-02 (`SPEC_REVIEW.md`).
 
 ---
 
@@ -46,7 +48,8 @@ Drilldown — механизм последовательной расшифро
 
 | Итоговая ячейка | L1-фильтр проводок | Регистр |
 |---|---|---|
-| `actual_amount` элемента X | `cost_element_id=X`, `object_id`, `period BETWEEN from AND to` | `actual_costs` |
+| `actual_amount` элемента X (кроме overhead) | `cost_element_id=X`, `object_id`, `period BETWEEN from AND to` | `actual_costs` |
+| `actual_amount` элемента `kind=overhead` | `object_id`, `period BETWEEN from AND to` | `overhead_distribution` |
 | `planned_amount` элемента X | `cost_element_id=X`, `object_id`, `period BETWEEN from AND to` | `planned_costs` |
 | `deviation` (вычисляется) | не drilldown — разница | — |
 
@@ -63,7 +66,7 @@ Drilldown — механизм последовательной расшифро
 | Карточка | L1-фильтр | Регистр |
 |---|---|---|
 | `total_planned` | `object_id`, `period` | `planned_costs` |
-| `total_actual` | `object_id`, `period` | `actual_costs` |
+| `total_actual` | `object_id`, `period` | `actual_costs` + `overhead_distribution` |
 | `total_deviation` | не drilldown | — |
 
 ### 2.2. Оборотно-сальдовая ведомость (`/reports/cost-turnover`)
@@ -95,7 +98,7 @@ Drilldown — механизм последовательной расшифро
 
 | Строка | L1-фильтр проводок | Регистр |
 |---|---|---|
-| Объект X, `actual_cost` | `object_id=X`, `period` | `actual_costs` |
+| Объект X, `actual_cost` | `object_id=X`, `period` | `actual_costs` + `overhead_distribution` |
 | Объект X, `planned_cost` | `object_id=X`, `period` | `planned_costs` |
 | `contract_value`, `profit` | не drilldown — из `completed_works_cost` | — |
 
@@ -386,6 +389,10 @@ interface DrilldownProps {
 3. Колонка «Регистратор» — кликабельная ссылка на документ (L2).
 4. Пагинация серверная.
 5. Итоги внизу (сумма количества и суммы).
+6. Для итогов, включающих прямые и накладные затраты, диалог показывает обе
+   составляющие (две секции либо единый список с `source_register`). Сумма строк
+   обязана совпадать со значением ячейки, из которой открыт drilldown.
+7. Ошибка загрузки показывается пользователю и не маскируется как пустой результат.
 
 ### 6.2. Интерактивность в отчётах
 
@@ -481,6 +488,9 @@ export interface DrilldownResponse {
 }
 ```
 
+Пагинация передаётся в стандартном верхнеуровневом поле `ApiResponse.pagination`,
+а не внутри `DrilldownResponse`.
+
 ---
 
 ## 7. Предопределённые элементы затрат
@@ -511,7 +521,10 @@ export interface DrilldownResponse {
 4. Drilldown корректно работает при фильтрации отчёта по объекту.
 5. Пагинация drilldown работает серверно.
 6. Колонка «Регистратор» показывает номер документа и является ссылкой.
-7. Регресс: существующие функции отчётов не сломаны.
+7. Drilldown фактической себестоимости работы/объекта включает прямые затраты и
+   распределённые накладные; сумма расшифровки точно равна исходной ячейке.
+8. Ошибка API отображается как ошибка, а не как «нет данных».
+9. Регресс: существующие функции отчётов не сломаны.
 
 ---
 
@@ -532,3 +545,4 @@ export interface DrilldownResponse {
 | Версия | Дата | Изменения |
 |---|---|---|
 | 0.1 | 2026-08-01 | Первичная спецификация: двухуровневая модель, 4 отчёта, 3 drilldown-endpoint'а, CostDrilldownDialog. |
+| 0.2 | 2026-09-02 | Зафиксирован частичный статус; устранено противоречие по overhead, добавлены reconciliation и error-state требования. |

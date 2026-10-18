@@ -13,7 +13,7 @@
 
 ### Поддерживаемые документы:
 - Сметы (Estimates)
-- Ежедневные отчеты (Daily Reports)
+- Отчёты прораба (Daily Reports)
 - Табели (Timesheets)
 
 ## Использование
@@ -72,7 +72,7 @@ POST /api/documents/estimates/bulk-post
 POST /api/documents/estimates/bulk-unpost
 ```
 
-### Ежедневные отчеты
+### Отчёты прораба
 ```
 POST /api/documents/daily-reports/bulk-delete
 POST /api/documents/daily-reports/bulk-post

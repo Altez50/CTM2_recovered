@@ -2,21 +2,15 @@
 
 End-to-end tests for the web client using Playwright.
 
-## Prerequisites
+## Current suite
 
-1. **Backend API must be running** on `http://localhost:8000`
-   ```bash
-   # From project root
-   python -m uvicorn api.main:app --reload
-   ```
+The suite contains 22 layout checks across 11 new-document routes plus P0 smoke
+coverage for login, protected routing, estimate create/save, role-sensitive
+posting controls, and dirty-form close confirmation. API calls are mocked, so
+these browser tests do not require a backend or test database; equivalent API
+contracts run against a temporary SQLite database in `api/tests`.
 
-2. **Test database must be set up** with test users
-   ```bash
-   # From project root
-   python api/tests/setup_test_db.py
-   ```
-
-3. **Playwright browsers must be installed**
+**Playwright browsers must be installed:**
    ```bash
    # From web-client directory
    npx playwright install
@@ -39,9 +33,9 @@ npm run test:e2e:ui
 npm run test:e2e:debug
 ```
 
-### Run specific test file
+### Run the current test file
 ```bash
-npx playwright test e2e/login.spec.ts
+npx playwright test e2e/document-fields-layout.spec.ts
 ```
 
 ### Run tests in headed mode (see browser)
@@ -49,14 +43,9 @@ npx playwright test e2e/login.spec.ts
 npx playwright test --headed
 ```
 
-## Test Structure
-
-- `login.spec.ts` - Authentication flow tests
-  - Login with valid credentials
-  - Login with invalid credentials
-  - Protected route access
-  - Session persistence
-  - Logout flow
+The first authentication, CRUD, role, lifecycle, import and sync regression
+contracts are present. Broader per-document and based-on/file-import scenarios
+remain tracked in the repository-level `DEVELOPMENT_PLAN.md`.
 
 ## Writing New Tests
 

@@ -1,6 +1,10 @@
 # Спецификация: загрузка расценок Минстроя (ФЕР/ГЭСН) в каталог работ
 
-Обновлено: 2026-08-24
+Версия: 0.2
+Обновлено: 2026-09-02
+Статус реализации: **не начато**; исполняемый parser/API/UI не найден.
+Зависимости: P0/P1 из `DEVELOPMENT_PLAN.md`, `SECURITY_BASELINE_SPEC.md`.
+Владелец: требуется назначить. Проверено по коду: 2026-09-02.
 
 ---
 
@@ -19,17 +23,17 @@
 
 - Каталог работ: `works (name, code, unit, price, labor_rate, parent_id,
   is_group, specification_review_status)`
-  ([api/database.py#L155-L173](file:///f:/2026f/ctm3/CTM2_recovered/current/api/database.py#L155-L173));
+  ([`current/api/database.py`](current/api/database.py));
   иерархия групп через `parent_id`, редактирование — `WorkCatalogView.vue`
   + `WorkForm.vue`.
 - Спецификации работ: `work_specifications (work_id, component_type,
   component_name, unit_id, consumption_rate, unit_price, material_id)`
-  ([api/database.py#L202-L220](file:///f:/2026f/ctm3/CTM2_recovered/current/api/database.py#L202-L220));
+  ([`current/api/database.py`](current/api/database.py));
   `component_type` ∈ материал / труд / машина / прочее.
 - Существующий импорт спецификаций: XLSX с предпросмотром, созданием
   материалов, статусами проверки и файлом корректировок
   (`preview_work_specification_import`,
-  [api/work_services.py](file:///f:/2026f/ctm3/CTM2_recovered/current/api/work_services.py#L1290)).
+  [`current/api/work_services.py`](current/api/work_services.py)).
 - Импорт справочников из 1С DBF (`api/scripts/import_1c_dbf.py`).
 - Загрузки нормативных баз Минстроя **нет**.
 
@@ -124,9 +128,16 @@ GET /api/works/normative-base/template
   XLSX-шаблон универсального формата
 ```
 
-Права: `admin` (массовое изменение НСИ). Применение выполняется батчами
-в одной транзакции на сборник; объём ФЕР — десятки тысяч расценок,
-поэтому разбор файла и вставка идут потоково, без полной загрузки в память.
+Права: `admin` (массовое изменение НСИ). До реализации требуется выбрать и
+зафиксировать один контракт применения:
+
+- атомарный сборник — одна транзакция, полный rollback при ошибке;
+- resumable job — транзакция на раздел/батч, job id, checkpoint, cancel и
+  компенсирующий rollback.
+
+Смешивать «батчи» и «одну транзакцию» без контракта восстановления нельзя.
+Объём ФЕР — десятки тысяч расценок, поэтому parsing потоковый, без полной загрузки
+в память. Apply принимает hash файла и idempotency key; повтор не создаёт дубли.
 
 ### 3.7. UI
 
@@ -179,3 +190,10 @@ GET /api/works/normative-base/template
 7. Все созданные записи синхронизируются на второй узел и видимы там в
    каталоге работ без ручных действий.
 8. Роль `foreman` не имеет доступа к эндпоинтам загрузки.
+9. Ошибка/отмена apply не оставляет недокументированного частичного состояния:
+   атомарный режим откатывается полностью, resumable режим показывает checkpoint
+   и предоставляет проверенный resume/rollback.
+10. Повтор apply с тем же file hash/idempotency key не создаёт повторных works,
+    specifications, materials, units или sync events.
+11. До начала B1 приложены анонимизированные эталонные файлы поддерживаемых
+    редакций и утверждены измеримые SLA времени/памяти для 5k и 50k работ.

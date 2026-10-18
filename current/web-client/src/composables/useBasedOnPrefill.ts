@@ -37,6 +37,8 @@ export interface BasedOnSource {
   estimate_number?: string | null
   organization_id?: number | null
   organization_name?: string | null
+  warehouse_id?: number | null
+  warehouse_name?: string | null
   counterparty_id?: number | null
   counterparty_name?: string | null
   contract_id?: number | null
@@ -172,6 +174,8 @@ async function loadSourceDocument(type: string, id: number): Promise<BasedOnSour
           number: d.number,
           organization_id: d.organization_id ?? null,
           organization_name: d.organization_name ?? null,
+          warehouse_id: d.warehouse_id ?? null,
+          warehouse_name: d.warehouse_name ?? null,
           counterparty_id: d.counterparty_id ?? null,
           counterparty_name: d.counterparty_name ?? null,
           contract_id: d.contract_id ?? null,
@@ -189,6 +193,8 @@ async function loadSourceDocument(type: string, id: number): Promise<BasedOnSour
           number: d.number,
           organization_id: d.organization_id ?? null,
           organization_name: d.organization_name ?? null,
+          warehouse_id: d.warehouse_id ?? null,
+          warehouse_name: d.warehouse_name ?? null,
           counterparty_id: d.counterparty_id ?? null,
           counterparty_name: d.counterparty_name ?? null,
           contract_id: d.contract_id ?? null,

@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from api.auth_dependencies import get_current_user, get_db, require_roles
+from api.auth_dependencies import get_current_user, get_trade_db, require_roles
 from api.list_query import parse_quick_filters
 from api.models.auth import UserInfo
 from api.models.common import ApiMessage, ApiResponse
@@ -50,7 +50,7 @@ router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 @router.get("/schedules", response_model=ApiResponse)
 def list_schedules(
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -81,7 +81,7 @@ def list_schedules(
 @router.post("/schedules", response_model=ApiResponse, status_code=201)
 def create_schedule(
     payload: PaymentScheduleCreate,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     return ApiResponse(
@@ -93,7 +93,7 @@ def create_schedule(
 @router.get("/schedules/{schedule_id}", response_model=ApiResponse)
 def get_schedule(
     schedule_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiResponse:
     return ApiResponse(data=get_payment_schedule(connection, schedule_id))
@@ -103,7 +103,7 @@ def get_schedule(
 def update_schedule(
     schedule_id: int,
     payload: PaymentScheduleUpdate,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     return ApiResponse(
@@ -115,7 +115,7 @@ def update_schedule(
 @router.delete("/schedules/{schedule_id}", response_model=ApiMessage)
 def remove_schedule(
     schedule_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiMessage:
     delete_payment_schedule(connection, schedule_id, current_user)
@@ -125,7 +125,7 @@ def remove_schedule(
 @router.post("/schedules/{schedule_id}/post", response_model=ApiMessage)
 def post_schedule(
     schedule_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("admin"))],
 ) -> ApiMessage:
     post_payment_schedule(connection, schedule_id=schedule_id, user=current_user)
@@ -135,7 +135,7 @@ def post_schedule(
 @router.post("/schedules/{schedule_id}/unpost", response_model=ApiMessage)
 def unpost_schedule(
     schedule_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("admin"))],
 ) -> ApiMessage:
     unpost_payment_schedule(connection, schedule_id=schedule_id, user=current_user)
@@ -150,7 +150,7 @@ def unpost_schedule(
 @router.post("/schedules/preview/incoming", response_model=ApiResponse)
 def preview_incoming(
     payload: SuggestIncomingRequest,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     items = suggest_incoming_from_work_execution(
@@ -166,7 +166,7 @@ def preview_incoming(
 @router.post("/schedules/preview/payroll", response_model=ApiResponse)
 def preview_payroll(
     payload: SuggestPayrollRequest,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     items = suggest_outgoing_from_payroll(
@@ -182,7 +182,7 @@ def preview_payroll(
 @router.post("/schedules/preview/goods-receipts", response_model=ApiResponse)
 def preview_goods_receipts(
     payload: SuggestGoodsRequest,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     items = suggest_outgoing_from_goods_receipts(
@@ -198,7 +198,7 @@ def preview_goods_receipts(
 @router.post("/schedules/preview/goods-issues", response_model=ApiResponse)
 def preview_goods_issues(
     payload: SuggestGoodsRequest,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     items = suggest_incoming_from_goods_issues(
@@ -218,7 +218,7 @@ def preview_goods_issues(
 
 @router.get("/transactions", response_model=ApiResponse)
 def list_transactions(
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -249,7 +249,7 @@ def list_transactions(
 @router.post("/transactions", response_model=ApiResponse, status_code=201)
 def create_transaction(
     payload: PaymentTransactionCreate,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     return ApiResponse(
@@ -261,7 +261,7 @@ def create_transaction(
 @router.get("/transactions/{tx_id}", response_model=ApiResponse)
 def get_transaction(
     tx_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiResponse:
     return ApiResponse(data=get_payment_transaction(connection, tx_id))
@@ -271,7 +271,7 @@ def get_transaction(
 def update_transaction(
     tx_id: int,
     payload: PaymentTransactionCreate,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     return ApiResponse(
@@ -283,7 +283,7 @@ def update_transaction(
 @router.delete("/transactions/{tx_id}", response_model=ApiMessage)
 def remove_transaction(
     tx_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiMessage:
     delete_payment_transaction(connection, tx_id, current_user)
@@ -293,7 +293,7 @@ def remove_transaction(
 @router.post("/transactions/{tx_id}/post", response_model=ApiMessage)
 def post_transaction(
     tx_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("admin"))],
 ) -> ApiMessage:
     post_payment_transaction(connection, tx_id=tx_id, user=current_user)
@@ -303,7 +303,7 @@ def post_transaction(
 @router.post("/transactions/{tx_id}/unpost", response_model=ApiMessage)
 def unpost_transaction(
     tx_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("admin"))],
 ) -> ApiMessage:
     unpost_payment_transaction(connection, tx_id=tx_id, user=current_user)
@@ -317,7 +317,7 @@ def unpost_transaction(
 
 @router.get("/register", response_model=ApiResponse)
 def query_register(
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
@@ -348,7 +348,7 @@ def query_register(
 
 @router.get("/cashflow", response_model=ApiResponse)
 def query_cashflow(
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     date_from: str = Query(...),
     date_to: str = Query(...),
@@ -368,7 +368,7 @@ def query_cashflow(
 @router.get("/transactions/{tx_id}/movements", response_model=ApiResponse)
 def transaction_movements(
     tx_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiResponse:
     """Mutual-settlement register rows produced by one payment transaction."""

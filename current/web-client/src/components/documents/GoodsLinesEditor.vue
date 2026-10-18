@@ -17,6 +17,7 @@
             <th class="col-num">№</th>
             <th class="col-material">Материал</th>
             <th class="col-name">Наименование</th>
+            <th>Упаковка и аналитики</th>
             <th class="col-unit">Ед.</th>
             <th class="col-num-val">Кол-во</th>
             <th class="col-num-val">Цена без НДС</th>
@@ -33,7 +34,7 @@
             <td class="col-material">
               <EntityPicker
                 :model-value="line.material_id ?? null"
-                :selected-label="line.material_code || ''"
+                :selected-label="line.material_code || (line.material_id ? line.name : '')"
                 :disabled="disabled"
                 compact
                 title="Выбор материала"
@@ -48,6 +49,7 @@
             <td class="col-name">
               <input v-model="line.name" class="input inline-control" type="text" :disabled="disabled" placeholder="Наименование" />
             </td>
+            <td><StockDimensionsEditor :line="line" :disabled="disabled" /></td>
             <td class="col-unit">
               <input v-model="line.unit" class="input inline-control" type="text" :disabled="disabled" placeholder="ед." />
             </td>
@@ -70,7 +72,7 @@
             </td>
           </tr>
           <tr v-if="!lines.length">
-            <td colspan="11" class="empty">Нет строк. Нажмите «Добавить строку» или загрузите из Excel.</td>
+            <td colspan="12" class="empty">Нет строк. Нажмите «Добавить строку» или загрузите из Excel.</td>
           </tr>
         </tbody>
       </table>
@@ -81,6 +83,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import EntityPicker from '../common/EntityPicker.vue'
+import StockDimensionsEditor from './StockDimensionsEditor.vue'
 import { listReferences } from '../../api/references'
 import type { GoodsLine } from '../../types/models'
 
@@ -142,13 +145,14 @@ function recompute(index: number) {
 async function loadMaterials(params: { search: string; page: number; pageSize: number }) {
   const res = await listReferences('materials', { search: params.search, page: params.page, page_size: params.pageSize })
   return {
-    items: (res.data as unknown as Array<Record<string, unknown>>).map((m) => ({
+    items: (res.data as unknown as Array<Record<string, unknown>>).filter((m) => !m.is_group).map((m) => ({
       id: m.id as number,
       label: `${String(m.code ?? '')} ${String(m.name ?? '')}`.trim(),
       caption: m.code ? `Код: ${m.code}` : undefined,
       meta: {
         unit: (m.unit_name ?? m.unit ?? '') as string,
         price: Number(m.price ?? 0),
+        unit_id: m.unit_id,
       },
     })),
     pages: res.pagination?.pages ?? 1,
@@ -159,6 +163,8 @@ function onMaterialPick(index: number, value: number | null) {
   const line = props.lines[index]
   if (!line) return
   line.material_id = value
+  line.package_id = null; line.characteristic_id = null; line.series_id = null
+  line.package_name = null; line.characteristic_name = null; line.series_name = null; line.conversion_factor = 1
   notify()
 }
 
@@ -167,6 +173,7 @@ function onMaterialChange(index: number, item: { id?: number; label?: string; me
   if (!line || !item) return
   if (!line.name && item.label) line.name = item.label
   if (item.meta) {
+    line.unit_id = Number(item.meta.unit_id) || null
     if (item.meta.unit && !line.unit) line.unit = String(item.meta.unit)
     if (item.meta.price && !line.price_without_vat) line.price_without_vat = Number(item.meta.price)
   }

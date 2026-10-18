@@ -97,7 +97,7 @@
           </button>
           <button class="button button-secondary" type="button" @click="addGroupLine">Добавить группу</button>
           <button class="button button-secondary" type="button" @click="addWorkLine">Добавить пустую работу</button>
-          <button v-if="isEdit" class="button button-secondary" type="button" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
+          <button v-if="isEdit && auth.canManageCost" class="button button-secondary" type="button" title="Импорт/экспорт строк" @click="dataExchangeOpen = true">⇄ Обмен данными</button>
           <span class="status-pill" :class="form.is_posted ? 'posted' : 'draft'">
             {{ form.is_posted ? 'Проведен' : 'Черновик' }}
           </span>
@@ -259,7 +259,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import EntityPicker, { type PickerItem } from '../../components/common/EntityPicker.vue'
 import FormField from '../../components/common/FormField.vue'
@@ -268,6 +268,7 @@ import EstimateWorkCatalog from '../../components/documents/EstimateWorkCatalog.
 import EstimateDataExchangeDialog from '../../components/documents/EstimateDataExchangeDialog.vue'
 import { useDocumentDensity } from '../../composables/useDocumentDensity'
 import { useHeaderBar } from '../../composables/useHeaderBar'
+import { useDirtyFlag } from '../../composables/useDirtyFlag'
 import { createEstimate, getEstimate, postEstimate, unpostEstimate, updateEstimate } from '../../api/documents'
 import { listReferences } from '../../api/references'
 import { useAuthStore } from '../../stores/auth'
@@ -350,6 +351,9 @@ const estimateTableColumns = ESTIMATE_TABLE_COLUMNS
 
 const { isCompactMode } = useDocumentDensity()
 const saving = ref(false)
+const isDirty = ref(false)
+let trackDirtyChanges = false
+useDirtyFlag(isDirty)
 const error = ref('')
 const catalogVisible = ref(true)
 const dataExchangeOpen = ref(false)
@@ -628,10 +632,18 @@ function handleContractChange(item: PickerItem | null) {
 
 async function loadDocument() {
   if (!props.id) return
-  const response = await getEstimate(Number(props.id))
-  form.value = response.data
-  recomputeAll()
-  ensureSelectedLine('last')
+  const wasTracking = trackDirtyChanges
+  trackDirtyChanges = false
+  try {
+    const response = await getEstimate(Number(props.id))
+    form.value = response.data
+    recomputeAll()
+    ensureSelectedLine('last')
+    await nextTick()
+    isDirty.value = false
+  } finally {
+    trackDirtyChanges = wasTracking
+  }
 }
 
 async function save() {
@@ -651,6 +663,7 @@ async function save() {
       const response = await createEstimate(payload)
       await router.replace(`/documents/estimates/${response.data.id}`)
     }
+    isDirty.value = false
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Не удалось сохранить смету'
   } finally {
@@ -705,6 +718,9 @@ onMounted(async () => {
     } else {
       ensureSelectedLine('last')
     }
+    await nextTick()
+    isDirty.value = false
+    trackDirtyChanges = true
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Ошибка загрузки'
   }
@@ -715,6 +731,16 @@ onBeforeUnmount(() => {
   stopTableColumnResize?.()
   linesShellResizeObserver?.disconnect()
 })
+
+watch(
+  form,
+  () => {
+    if (trackDirtyChanges) {
+      isDirty.value = true
+    }
+  },
+  { deep: true },
+)
 
 watch(
   () => form.value.lines.length,

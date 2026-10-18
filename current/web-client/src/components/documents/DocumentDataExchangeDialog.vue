@@ -41,11 +41,11 @@
           <input v-model="replace" type="checkbox" /> Заменить существующие строки
         </label>
         <button class="button" :disabled="busy || !canImport" @click="doImport">
-          {{ busy ? 'Импорт…' : 'Импортировать' }}
+          {{ busy ? 'Обработка…' : previewReady ? 'Применить' : 'Проверить' }}
         </button>
       </div>
       <div v-if="result" class="result">
-        <p class="ok">Импортировано строк: {{ result.imported }}</p>
+        <p class="ok">{{ result.preview ? 'Проверено' : 'Импортировано' }} строк: {{ result.imported }}</p>
         <ul v-if="result.warnings?.length" class="warnings">
           <li v-for="(w, i) in result.warnings" :key="i">{{ w }}</li>
         </ul>
@@ -66,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Modal from '../common/Modal.vue'
 import {
   type DocDataExchangeKind,
@@ -90,6 +90,7 @@ const text = ref('')
 const replace = ref(true)
 const busy = ref(false)
 const result = ref<DocImportResult | null>(null)
+const previewReady = ref(false)
 const fileBytes = ref<ArrayBuffer | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 
@@ -111,15 +112,26 @@ async function doImport() {
   result.value = null
   try {
     const body = format.value === 'xlsx' ? fileBytes.value! : text.value
-    const resp = await importDocumentText(props.kind, props.docId, format.value, body, replace.value)
+    const preview = !previewReady.value
+    const resp = await importDocumentText(props.kind, props.docId, format.value, body, replace.value, preview)
     result.value = resp.data
-    emit('imported')
+    if (preview) {
+      previewReady.value = true
+    } else {
+      previewReady.value = false
+      emit('imported')
+    }
   } catch (e) {
     result.value = { imported: 0, warnings: [(e as Error).message], format: format.value }
   } finally {
     busy.value = false
   }
 }
+
+watch([format, text, replace, fileBytes], () => {
+  previewReady.value = false
+  result.value = null
+})
 
 async function doExport() {
   busy.value = true

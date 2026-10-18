@@ -18,6 +18,8 @@ class UserInfo(BaseModel):
     person_uuid: str | None = None
     full_name: str | None = None
     use_specification_review: bool = False
+    # None explicitly means legacy unrestricted access; [] denies every org.
+    organization_ids: list[int] | None = None
 
 
 class LoginResponse(BaseModel):

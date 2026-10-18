@@ -1,0 +1,21 @@
+[Unit]
+Description=CTM Docker Compose stack
+Requires=docker.service
+After=docker.service network-online.target NetworkManager-wait-online.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/srv/ctm/deploy
+TimeoutStartSec=180
+
+# The reverse proxy publishes ports on this secondary address.  NetworkManager
+# can report network-online before the address is assigned, so wait explicitly.
+ExecStartPre=/bin/sh -c 'for i in $$(seq 1 60); do ip -o -4 addr show | grep -qw "192.168.0.39" && exit 0; sleep 2; done; echo "CTM address 192.168.0.39 was not assigned" >&2; exit 1'
+ExecStart=/usr/bin/docker-compose -f /srv/ctm/deploy/docker-compose.yml up -d
+ExecStartPost=/bin/sh -c 'id=$$(/usr/bin/docker-compose -f /srv/ctm/deploy/docker-compose.yml ps -q reverse-proxy); test -n "$$id" && test "$$(/usr/bin/docker inspect -f "{{.State.Running}}" "$$id")" = true'
+ExecStop=/usr/bin/docker-compose -f /srv/ctm/deploy/docker-compose.yml stop
+
+[Install]
+WantedBy=multi-user.target

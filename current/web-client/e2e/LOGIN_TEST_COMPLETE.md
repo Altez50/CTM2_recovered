@@ -1,5 +1,9 @@
 # Login Flow E2E Test - Implementation Complete
 
+> Historical note, not current evidence (verified 2026-09-02): the referenced
+> `e2e/login.spec.ts` file is absent. Login E2E coverage must be restored before
+> this item can be considered complete; see `SPEC_REVIEW.md`.
+
 ## Summary
 
 The E2E test for the login flow has been successfully implemented using Playwright. The test covers all critical authentication scenarios.

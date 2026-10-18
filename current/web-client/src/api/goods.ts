@@ -1,5 +1,5 @@
 import type { ApiResponse } from '../types/api'
-import type { DocumentMovements, GoodsDocument, GoodsDocumentPayload, GoodsImportPreview, GoodsKind, GoodsLine, ImportProfile, InventoryBalanceItem, InventoryMovementItem } from '../types/models'
+import type { DocumentMovements, GoodsDocument, GoodsDocumentPayload, GoodsImportPreview, GoodsKind, GoodsLine, GoodsTransfer, GoodsTransferPayload, ImportProfile, InventoryBalanceItem, InventoryMovementItem } from '../types/models'
 import { apiRequest, downloadRequest } from './client'
 
 interface ListParams {
@@ -69,13 +69,49 @@ export function copyGoodsDocument(kind: GoodsKind, id: number) {
   })
 }
 
+// --- Internal warehouse transfers ---
+
+export function listGoodsTransfers(params: ListParams = {}) {
+  return apiRequest<ApiResponse<GoodsTransfer[]>>(`/api/goods/transfers${toQuery(params)}`)
+}
+
+export function getGoodsTransfer(id: number) {
+  return apiRequest<ApiResponse<GoodsTransfer>>(`/api/goods/transfers/${id}`)
+}
+
+export function saveGoodsTransfer(payload: GoodsTransferPayload, id?: number) {
+  return apiRequest<ApiResponse<GoodsTransfer>>(`/api/goods/transfers${id ? `/${id}` : ''}`, {
+    method: id ? 'PUT' : 'POST', body: JSON.stringify(payload),
+  })
+}
+
+export function postGoodsTransfer(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/goods/transfers/${id}/post`, { method: 'POST' })
+}
+
+export function unpostGoodsTransfer(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/goods/transfers/${id}/unpost`, { method: 'POST' })
+}
+
+export function copyGoodsTransfer(id: number) {
+  return apiRequest<ApiResponse<GoodsTransfer>>(`/api/goods/transfers/${id}/copy`, { method: 'POST' })
+}
+
+export function deleteGoodsTransfer(id: number) {
+  return apiRequest<ApiResponse<unknown>>(`/api/goods/transfers/${id}`, { method: 'DELETE' })
+}
+
+export function getGoodsTransferMovements(id: number) {
+  return apiRequest<ApiResponse<{ document: GoodsTransfer; inventory: InventoryMovementItem[]; settlements: [] }>>(`/api/goods/transfers/${id}/movements`)
+}
+
 // --- Inventory register ---
 
-export function getInventoryBalances(params: { date?: string; object_id?: number | null; material_id?: number | null }) {
+export function getInventoryBalances(params: { date?: string; object_id?: number | null; material_id?: number | null; warehouse_id?: number | null }) {
   return apiRequest<ApiResponse<InventoryBalanceItem[]>>(`/api/goods/inventory/balances${toQuery(params)}`)
 }
 
-export function getInventoryMovements(params: { date_from: string; date_to: string; object_id?: number | null; material_id?: number | null }) {
+export function getInventoryMovements(params: { date_from: string; date_to: string; object_id?: number | null; material_id?: number | null; warehouse_id?: number | null }) {
   return apiRequest<ApiResponse<InventoryMovementItem[]>>(`/api/goods/inventory/movements${toQuery(params)}`)
 }
 
@@ -89,6 +125,86 @@ export function getDocumentMovements(kind: GoodsKind, id: number) {
 
 export function exportGoodsLines(kind: GoodsKind, id: number): Promise<Blob> {
   return downloadRequest(`/api/goods/${PATH[kind].list}/${id}/lines/export`)
+}
+
+export interface GoodsMaterialResolveInput {
+  material_name: string
+  material_code?: string | null
+  unit_name?: string | null
+  unit_id?: number | null
+  unit_price?: number
+  source_row_numbers: number[]
+}
+
+export interface GoodsMaterialResolveResult {
+  material_id: number
+  material_name: string
+  material_code?: string | null
+  unit_id?: number | null
+  unit_name?: string | null
+  price: number
+  status: 'created' | 'reused'
+  source_row_numbers: number[]
+}
+
+export function resolveGoodsMaterials(materials: GoodsMaterialResolveInput[]) {
+  return apiRequest<ApiResponse<{
+    created_count: number
+    reused_count: number
+    materials: GoodsMaterialResolveResult[]
+  }>>('/api/goods/materials/resolve', {
+    method: 'POST',
+    body: JSON.stringify({ materials }),
+  })
+}
+
+const GOODS_LINE_HEADERS = [
+  '№', 'Материал', 'Код материала', 'Наименование', 'Ед.изм.', 'Количество',
+  'Цена без НДС', 'Ставка НДС %', 'Сумма без НДС', 'Сумма НДС',
+  'Сумма с НДС', 'Объект', 'Чертёж/СП', 'Примечание',
+  'ID единицы', 'ID упаковки', 'ID характеристики', 'ID серии',
+]
+
+function escapeExcelXml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/** Build an Excel-compatible table from the current editor state, including unsaved rows. */
+export function exportCurrentGoodsLines(lines: GoodsLine[], title: string): Blob {
+  const worksheetTitle = title.replace(/[\\/*?:\[\]]/g, '_').trim().slice(0, 31) || 'ТМЦ'
+  const rows = lines.map((line, index) => [
+    line.line_number || index + 1,
+    line.material_id ?? '',
+    line.material_code ?? '',
+    line.name ?? '',
+    line.unit_name || line.unit || '',
+    line.quantity ?? '',
+    line.price_without_vat ?? '',
+    line.vat_rate ?? '',
+    line.sum_without_vat ?? '',
+    line.vat_amount ?? '',
+    line.sum_with_vat ?? '',
+    line.object_id ?? '',
+    line.drawing_code ?? '',
+    line.note ?? '',
+    line.unit_id ?? '', line.package_id ?? '', line.characteristic_id ?? '', line.series_id ?? '',
+  ])
+  const renderRow = (cells: unknown[]) => `<Row>${cells.map((cell) => `<Cell><Data ss:Type="String">${escapeExcelXml(cell)}</Data></Cell>`).join('')}</Row>`
+  const xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Worksheet ss:Name="${escapeExcelXml(worksheetTitle)}"><Table>
+ ${renderRow(GOODS_LINE_HEADERS)}${rows.map(renderRow).join('')}
+ </Table></Worksheet>
+</Workbook>`
+  return new Blob([`\ufeff${xml}`], { type: 'application/vnd.ms-excel;charset=utf-8' })
 }
 
 export async function previewGoodsLinesImport(kind: GoodsKind, file: File): Promise<GoodsImportPreview> {

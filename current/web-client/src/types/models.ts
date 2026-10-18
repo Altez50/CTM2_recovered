@@ -6,6 +6,31 @@ export type ReferenceKind =
   | 'organizations'
   | 'contracts'
   | 'materials'
+  | 'warehouses'
+  | 'material-packages'
+  | 'material-characteristics'
+  | 'material-series'
+
+export interface MaterialAnalyticRecord {
+  id: number
+  name: string
+  material_id: number
+  material_name?: string
+  factor?: number
+  characteristic_id?: number | null
+}
+
+export interface StockDimensions {
+  package_id?: number | null
+  characteristic_id?: number | null
+  series_id?: number | null
+  package_name?: string | null
+  characteristic_name?: string | null
+  series_name?: string | null
+  conversion_factor?: number
+  base_quantity?: number | null
+  base_unit_id?: number | null
+}
 
 export interface UserInfo {
   id: number
@@ -15,6 +40,7 @@ export interface UserInfo {
   person_id?: number | null
   full_name?: string | null
   use_specification_review?: boolean
+  organization_ids?: number[] | null
 }
 
 export interface Counterparty {
@@ -71,6 +97,9 @@ export interface MaterialRecord {
   unit_id?: number | null
   unit_name?: string | null
   price: number
+  parent_id?: number | null
+  parent_name?: string | null
+  is_group?: boolean
 }
 
 export interface WorkSpecificationRecord {
@@ -181,6 +210,21 @@ export interface OrganizationRecord {
   is_group: boolean
 }
 
+export interface WarehouseRecord {
+  id: number
+  uuid?: string | null
+  code: string
+  name: string
+  organization_id: number
+  organization_name?: string | null
+  default_object_id?: number | null
+  default_object_name?: string | null
+  responsible_id?: number | null
+  responsible_name?: string | null
+  address?: string | null
+  marked_for_deletion: boolean
+}
+
 export interface ContractRecord {
   id: number
   number: string
@@ -205,12 +249,15 @@ export interface ContractRecord {
 }
 
 export type ReferenceRecord =
+  | MaterialAnalyticRecord
   | Counterparty
   | ObjectRecord
   | WorkRecord
   | PersonRecord
   | OrganizationRecord
   | ContractRecord
+  | MaterialRecord
+  | WarehouseRecord
 
 export interface EstimateLine {
   id?: number
@@ -548,6 +595,7 @@ export interface PaymentSchedule {
 }
 
 export interface PaymentTransaction {
+  allow_advance?: boolean
   id: number
   uuid?: string | null
   number: string
@@ -622,7 +670,7 @@ export interface CashflowDayItem {
 
 export type GoodsKind = 'receipt' | 'issue'
 
-export interface GoodsLine {
+export interface GoodsLine extends StockDimensions {
   id?: number
   uuid?: string | null
   line_number: number
@@ -651,6 +699,9 @@ export interface GoodsDocument {
   number: string
   date: string
   organization_id: number
+  warehouse: string
+  warehouse_id?: number | null
+  warehouse_name?: string | null
   organization_name?: string | null
   counterparty_id?: number | null
   counterparty_name?: string | null
@@ -679,7 +730,7 @@ export interface GoodsDocument {
 }
 
 /** A line submitted to the API (totals are computed server-side). */
-export interface GoodsLineInput {
+export interface GoodsLineInput extends StockDimensions {
   id?: number
   line_number: number
   material_id?: number | null
@@ -701,12 +752,50 @@ export type GoodsDocumentPayload = Omit<GoodsDocument, 'id' | 'kind' | 'sum_with
   lines: GoodsLineInput[]
 }
 
+export interface GoodsTransferLine extends StockDimensions {
+  id?: number
+  line_number: number
+  material_id: number
+  name?: string
+  unit_id: number
+  quantity: number
+  unit_cost?: number
+  sum?: number
+  note?: string | null
+}
+
+export interface GoodsTransfer {
+  id: number
+  number: string
+  date: string
+  organization_id: number
+  organization_name?: string
+  source_warehouse_id: number
+  source_warehouse_name?: string
+  destination_warehouse_id: number
+  destination_warehouse_name?: string
+  source_object_id?: number | null
+  destination_object_id?: number | null
+  responsible_id?: number | null
+  description?: string | null
+  is_posted: boolean
+  line_count?: number
+  sum?: number
+  lines: GoodsTransferLine[]
+}
+
+export type GoodsTransferPayload = Omit<GoodsTransfer, 'id' | 'organization_name' | 'source_warehouse_name' | 'destination_warehouse_name' | 'is_posted' | 'line_count' | 'sum' | 'lines'> & {
+  lines: GoodsTransferLine[]
+}
+
 // --- Inventory register ---
 
-export interface InventoryBalanceItem {
+export interface InventoryBalanceItem extends StockDimensions {
   material_id?: number | null
   material_code?: string | null
   material_name?: string | null
+  warehouse_id?: number | null
+  warehouse_name?: string | null
   object_id?: number | null
   object_name?: string | null
   unit_id?: number | null
@@ -719,7 +808,7 @@ export interface InventoryBalanceItem {
   average_price: number
 }
 
-export interface InventoryMovementItem {
+export interface InventoryMovementItem extends StockDimensions {
   period: string
   recorder_type: string
   recorder_id: number
@@ -727,6 +816,8 @@ export interface InventoryMovementItem {
   material_id?: number | null
   material_code?: string | null
   material_name?: string | null
+  warehouse_id?: number | null
+  warehouse_name?: string | null
   object_id?: number | null
   object_name?: string | null
   unit_id?: number | null
@@ -742,6 +833,8 @@ export interface InventoryMovementItem {
 export type SettlementDirection = 'receivable' | 'payable'
 
 export interface SettlementBalanceItem {
+  customer_advance: number
+  supplier_advance: number
   organization_id: number
   organization_name?: string | null
   counterparty_id?: number | null
@@ -759,6 +852,12 @@ export interface SettlementBalanceItem {
 }
 
 export interface SettlementTurnoverRow {
+  object_id?: number | null
+  object_name?: string | null
+  customer_advance_opening: number
+  customer_advance_closing: number
+  supplier_advance_opening: number
+  supplier_advance_closing: number
   organization_id: number
   organization_name?: string | null
   counterparty_id?: number | null
@@ -779,6 +878,8 @@ export interface SettlementTurnoverRow {
 }
 
 export interface SettlementLedgerItem {
+  customer_advance_running: number
+  supplier_advance_running: number
   period: string
   recorder_type: string
   recorder_id: number
@@ -863,7 +964,7 @@ export interface DocumentMovementsHeader {
   sum_with_vat: number
 }
 
-export interface InventoryMovementDocRow {
+export interface InventoryMovementDocRow extends StockDimensions {
   line_number: number
   period: string
   material_id?: number | null

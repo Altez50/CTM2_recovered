@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, File, Query, Request, Response, UploadFile
 
-from api.auth_dependencies import get_current_user, get_db, require_roles
+from api.auth_dependencies import get_current_user, get_trade_db, require_roles
 from api.list_query import parse_quick_filters
 from api.import_profiles import delete_profile, list_profiles, save_profile
 from api.models.auth import UserInfo
@@ -13,7 +13,13 @@ from api.models.common import ApiMessage, ApiResponse
 from api.models.goods import (
     GoodsIssueCreate,
     GoodsReceiptCreate,
+    GoodsTransferCreate,
 )
+from api.warehouse_transfer_services import (
+    copy_transfer, delete_transfer, get_transfer, list_transfers,
+    post_transfer, save_transfer, transfer_movements, unpost_transfer,
+)
+from api.models.works import ImportMaterialCreateRequest
 from api.goods_services import (
     copy_goods_issue,
     copy_goods_receipt,
@@ -35,6 +41,7 @@ from api.goods_services import (
     unpost_goods_issue,
     unpost_goods_receipt,
 )
+from api.work_services import create_materials_from_import_preview
 
 
 router = APIRouter(prefix="/api/goods", tags=["goods"])
@@ -47,7 +54,7 @@ router = APIRouter(prefix="/api/goods", tags=["goods"])
 
 @router.get("/receipts", response_model=ApiResponse)
 def list_receipts(
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -82,7 +89,7 @@ def list_receipts(
 @router.post("/receipts", response_model=ApiResponse, status_code=201)
 def create_receipt(
     payload: GoodsReceiptCreate,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     return ApiResponse(
@@ -94,7 +101,7 @@ def create_receipt(
 @router.get("/receipts/{receipt_id}", response_model=ApiResponse)
 def get_receipt(
     receipt_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiResponse:
     return ApiResponse(data=get_goods_receipt(connection, receipt_id))
@@ -104,7 +111,7 @@ def get_receipt(
 def update_receipt(
     receipt_id: int,
     payload: GoodsReceiptCreate,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     return ApiResponse(
@@ -116,7 +123,7 @@ def update_receipt(
 @router.delete("/receipts/{receipt_id}", response_model=ApiMessage)
 def remove_receipt(
     receipt_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiMessage:
     delete_goods_receipt(connection, receipt_id, current_user)
@@ -126,7 +133,7 @@ def remove_receipt(
 @router.post("/receipts/{receipt_id}/post", response_model=ApiMessage)
 def post_receipt(
     receipt_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("admin"))],
     auto_schedule: bool = Query(default=True),
 ) -> ApiMessage:
@@ -137,7 +144,7 @@ def post_receipt(
 @router.post("/receipts/{receipt_id}/unpost", response_model=ApiMessage)
 def unpost_receipt(
     receipt_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("admin"))],
 ) -> ApiMessage:
     unpost_goods_receipt(connection, document_id=receipt_id, user=current_user)
@@ -147,7 +154,7 @@ def unpost_receipt(
 @router.post("/receipts/{receipt_id}/copy", response_model=ApiResponse, status_code=201)
 def copy_receipt(
     receipt_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     return ApiResponse(
@@ -163,7 +170,7 @@ def copy_receipt(
 
 @router.get("/issues", response_model=ApiResponse)
 def list_issues(
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -198,7 +205,7 @@ def list_issues(
 @router.post("/issues", response_model=ApiResponse, status_code=201)
 def create_issue(
     payload: GoodsIssueCreate,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     return ApiResponse(
@@ -210,7 +217,7 @@ def create_issue(
 @router.get("/issues/{issue_id}", response_model=ApiResponse)
 def get_issue(
     issue_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiResponse:
     return ApiResponse(data=get_goods_issue(connection, issue_id))
@@ -220,7 +227,7 @@ def get_issue(
 def update_issue(
     issue_id: int,
     payload: GoodsIssueCreate,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     return ApiResponse(
@@ -232,7 +239,7 @@ def update_issue(
 @router.delete("/issues/{issue_id}", response_model=ApiMessage)
 def remove_issue(
     issue_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiMessage:
     delete_goods_issue(connection, issue_id, current_user)
@@ -242,7 +249,7 @@ def remove_issue(
 @router.post("/issues/{issue_id}/post", response_model=ApiMessage)
 def post_issue(
     issue_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("admin"))],
     auto_schedule: bool = Query(default=True),
 ) -> ApiMessage:
@@ -253,7 +260,7 @@ def post_issue(
 @router.post("/issues/{issue_id}/unpost", response_model=ApiMessage)
 def unpost_issue(
     issue_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("admin"))],
 ) -> ApiMessage:
     unpost_goods_issue(connection, document_id=issue_id, user=current_user)
@@ -263,7 +270,7 @@ def unpost_issue(
 @router.post("/issues/{issue_id}/copy", response_model=ApiResponse, status_code=201)
 def copy_issue(
     issue_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
 ) -> ApiResponse:
     return ApiResponse(
@@ -273,17 +280,127 @@ def copy_issue(
 
 
 # ---------------------------------------------------------------------------
+# Warehouse transfers
+# ---------------------------------------------------------------------------
+
+
+@router.get("/transfers", response_model=ApiResponse)
+def list_transfer_documents(
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    search: str | None = None,
+    organization_id: int | None = None,
+    source_warehouse_id: int | None = None,
+    destination_warehouse_id: int | None = None,
+    is_posted: bool | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str = "desc",
+) -> ApiResponse:
+    items, pagination = list_transfers(
+        connection, page=page, page_size=page_size, search=search,
+        organization_id=organization_id, source_warehouse_id=source_warehouse_id,
+        destination_warehouse_id=destination_warehouse_id, is_posted=is_posted,
+        date_from=date_from, date_to=date_to, sort_by=sort_by, sort_order=sort_order,
+    )
+    return ApiResponse(data=items, pagination=pagination)
+
+
+@router.post("/transfers", response_model=ApiResponse, status_code=201)
+def create_transfer_document(
+    payload: GoodsTransferCreate,
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
+    current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
+) -> ApiResponse:
+    return ApiResponse(data=save_transfer(connection, payload=payload.model_dump(), user=current_user))
+
+
+@router.get("/transfers/{transfer_id}", response_model=ApiResponse)
+def get_transfer_document(
+    transfer_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+) -> ApiResponse:
+    return ApiResponse(data=get_transfer(connection, transfer_id))
+
+
+@router.put("/transfers/{transfer_id}", response_model=ApiResponse)
+def update_transfer_document(
+    transfer_id: int,
+    payload: GoodsTransferCreate,
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
+    current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
+) -> ApiResponse:
+    return ApiResponse(data=save_transfer(connection, payload=payload.model_dump(), user=current_user, transfer_id=transfer_id))
+
+
+@router.delete("/transfers/{transfer_id}", response_model=ApiMessage)
+def remove_transfer_document(
+    transfer_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
+    current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
+) -> ApiMessage:
+    delete_transfer(connection, transfer_id=transfer_id, user=current_user)
+    return ApiMessage(message="Перемещение помечено на удаление")
+
+
+@router.post("/transfers/{transfer_id}/post", response_model=ApiMessage)
+def post_transfer_document(
+    transfer_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
+    current_user: Annotated[UserInfo, Depends(require_roles("admin"))],
+) -> ApiMessage:
+    post_transfer(connection, transfer_id=transfer_id, user=current_user)
+    return ApiMessage(message="Перемещение проведено")
+
+
+@router.post("/transfers/{transfer_id}/unpost", response_model=ApiMessage)
+def unpost_transfer_document(
+    transfer_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
+    current_user: Annotated[UserInfo, Depends(require_roles("admin"))],
+) -> ApiMessage:
+    unpost_transfer(connection, transfer_id=transfer_id, user=current_user)
+    return ApiMessage(message="Проведение отменено")
+
+
+@router.post("/transfers/{transfer_id}/copy", response_model=ApiResponse, status_code=201)
+def copy_transfer_document(
+    transfer_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
+    current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
+) -> ApiResponse:
+    return ApiResponse(data=copy_transfer(connection, transfer_id=transfer_id, user=current_user))
+
+
+@router.get("/transfers/{transfer_id}/movements", response_model=ApiResponse)
+def get_transfer_movements(
+    transfer_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+) -> ApiResponse:
+    return ApiResponse(data=transfer_movements(connection, transfer_id))
+
+
+# ---------------------------------------------------------------------------
 # Inventory register
 # ---------------------------------------------------------------------------
 
 
 @router.get("/inventory/balances", response_model=ApiResponse)
 def get_inventory_balances(
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     date: str | None = None,
     object_id: int | None = None,
     material_id: int | None = None,
+    warehouse_id: int | None = None,
+    characteristic_id: int | None = None,
+    series_id: int | None = None,
+    organization_id: int | None = None,
 ) -> ApiResponse:
     return ApiResponse(
         data=inventory_balances(
@@ -291,18 +408,24 @@ def get_inventory_balances(
             on_date=date,
             object_id=object_id,
             material_id=material_id,
+            warehouse_id=warehouse_id,
+            characteristic_id=characteristic_id, series_id=series_id, organization_id=organization_id,
         )
     )
 
 
 @router.get("/inventory/movements", response_model=ApiResponse)
 def get_inventory_movements(
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     date_from: str = Query(...),
     date_to: str = Query(...),
     object_id: int | None = None,
     material_id: int | None = None,
+    warehouse_id: int | None = None,
+    characteristic_id: int | None = None,
+    series_id: int | None = None,
+    organization_id: int | None = None,
 ) -> ApiResponse:
     return ApiResponse(
         data=inventory_movements(
@@ -311,6 +434,8 @@ def get_inventory_movements(
             date_to=date_to,
             object_id=object_id,
             material_id=material_id,
+            warehouse_id=warehouse_id,
+            characteristic_id=characteristic_id, series_id=series_id, organization_id=organization_id,
         )
     )
 
@@ -324,7 +449,7 @@ def get_inventory_movements(
 def get_document_movements_endpoint(
     kind: str,
     document_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiResponse:
     """Register movements (inventory + settlements) produced by one document."""
@@ -336,10 +461,23 @@ def get_document_movements_endpoint(
 # ---------------------------------------------------------------------------
 
 
+@router.post("/materials/resolve", response_model=ApiResponse)
+def resolve_line_materials(
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
+    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    payload: ImportMaterialCreateRequest,
+) -> ApiResponse:
+    """Reuse materials by code/name and create unresolved ones in the common folder."""
+    return ApiResponse(
+        data=create_materials_from_import_preview(connection, payload),
+        message="Materials resolved",
+    )
+
+
 @router.get("/receipts/{receipt_id}/lines/export", response_model=None)
 def export_receipt_lines(
     receipt_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> Response:
     content = export_goods_document_lines(connection, kind="receipt", document_id=receipt_id)
@@ -353,7 +491,7 @@ def export_receipt_lines(
 @router.get("/issues/{issue_id}/lines/export", response_model=None)
 def export_issue_lines(
     issue_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> Response:
     content = export_goods_document_lines(connection, kind="issue", document_id=issue_id)
@@ -367,10 +505,11 @@ def export_issue_lines(
 @router.post("/receipts/{receipt_id}/lines/import", response_model=ApiResponse)
 async def import_receipt_lines(
     receipt_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
     file: UploadFile = File(...),
 ) -> ApiResponse:
+    get_goods_receipt(connection, receipt_id)
     content = await file.read()
     preview = preview_goods_lines_import(
         connection, kind="receipt", filename=file.filename or "import.xlsx", content=content
@@ -381,10 +520,11 @@ async def import_receipt_lines(
 @router.post("/issues/{issue_id}/lines/import", response_model=ApiResponse)
 async def import_issue_lines(
     issue_id: int,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
     file: UploadFile = File(...),
 ) -> ApiResponse:
+    get_goods_issue(connection, issue_id)
     content = await file.read()
     preview = preview_goods_lines_import(
         connection, kind="issue", filename=file.filename or "import.xlsx", content=content
@@ -394,7 +534,7 @@ async def import_issue_lines(
 
 @router.post("/lines/import-preview", response_model=ApiResponse)
 async def import_lines_preview(
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
     kind: str = Query(..., regex="^(receipt|issue)$"),
     file: UploadFile = File(...),
@@ -413,7 +553,7 @@ async def import_lines_preview(
 
 @router.get("/import-profiles", response_model=ApiResponse)
 def list_import_profiles(
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
     target: str | None = Query(default=None, regex="^(goods_receipt|goods_issue|work_specification)$"),
 ) -> ApiResponse:
@@ -422,7 +562,7 @@ def list_import_profiles(
 
 @router.post("/import-profiles", response_model=ApiResponse)
 def save_import_profile(
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
     payload: dict[str, Any] = Body(...),
 ) -> ApiResponse:
@@ -433,7 +573,7 @@ def save_import_profile(
 @router.delete("/import-profiles/{name}", response_model=ApiMessage)
 def delete_import_profile(
     name: str,
-    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    connection: Annotated[sqlite3.Connection, Depends(get_trade_db)],
     current_user: Annotated[UserInfo, Depends(require_roles("manager", "admin"))],
     target: str = Query(..., regex="^(goods_receipt|goods_issue|work_specification)$"),
 ) -> ApiMessage:

@@ -2,7 +2,7 @@
   <div class="command-bar">
     <div class="command-group">
       <slot name="create">
-        <button class="button button-primary" type="button" @click="config.createRoute ? routerPush(config.createRoute) : null">
+        <button class="button button-primary" type="button" :disabled="!state.canCreate.value" @click="config.createRoute ? routerPush(config.createRoute) : null">
           {{ config.createLabel }}
         </button>
       </slot>
@@ -19,7 +19,7 @@
         v-if="config.api.copy"
         class="button button-secondary"
         type="button"
-        :disabled="!state.canOpen || !state.singleRow.value"
+        :disabled="!state.canCreate.value || !state.canOpen || !state.singleRow.value"
         title="Скопировать"
         @click="state.copySelected()"
       >

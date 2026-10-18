@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import sqlite3
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -33,6 +33,13 @@ _EXPORT_COLUMNS: list[tuple[str, str]] = [
     ("sum_expense", "Расход сумма"),
     ("balance_sum", "Баланс"),
 ]
+
+
+def _safe_export_cell(value: Any) -> Any:
+    """Prevent spreadsheet formula execution for user-controlled text."""
+    if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@", "\t", "\r")):
+        return "'" + value
+    return value
 
 
 @router.get("/work-execution", response_model=ApiResponse)
@@ -106,22 +113,23 @@ def export_work_execution(
         sort_by=sort_by,
         sort_order=sort_order,
         filters=filters,
+        export_all=True,
     )
 
     # Заголовки колонок
     headers = [label for _, label in _EXPORT_COLUMNS]
     # Данные
-    data_rows: list[list[str]] = []
+    data_rows: list[list[Any]] = []
     for item in items:
-        data_rows.append([str(item.get(key, "")) for key, _ in _EXPORT_COLUMNS])
+        data_rows.append([_safe_export_cell(item.get(key, "")) for key, _ in _EXPORT_COLUMNS])
     # Строка итогов
     data_rows.append([
         "", "", "", "", "", "", "", "Итого:",
-        str(totals.get("quantity_income", "")),
-        str(totals.get("quantity_expense", "")),
-        str(totals.get("sum_income", "")),
-        str(totals.get("sum_expense", "")),
-        str(totals.get("balance_sum", "")),
+        totals.get("quantity_income", ""),
+        totals.get("quantity_expense", ""),
+        totals.get("sum_income", ""),
+        totals.get("sum_expense", ""),
+        totals.get("balance_sum", ""),
     ])
 
     if format == "csv":
@@ -142,26 +150,23 @@ def export_work_execution(
             },
         )
 
-    # xlsx — генерируем HTML-таблицу (Excel открывает нативно)
-    html_rows = "".join(
-        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>"
-        for row in [headers] + data_rows
-    )
-    html = (
-        '<html xmlns:o="urn:schemas-microsoft-com:office:office"'
-        ' xmlns:x="urn:schemas-microsoft-com:office:excel"'
-        ' xmlns="http://www.w3.org/TR/REC-html40">'
-        "<head><meta charset=\"utf-8\"></head><body>"
-        f"<table border=\"1\">{html_rows}</table>"
-        "</body></html>"
-    )
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Регистр работ"
+    worksheet.append(headers)
+    for row in data_rows:
+        worksheet.append(row)
+    output = io.BytesIO()
+    workbook.save(output)
     return Response(
-        content=html.encode("utf-8"),
-        media_type="application/vnd.ms-excel",
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": (
-                'attachment; filename="work_execution.xls"; '
-                f"filename*=UTF-8''{quote('Регистр_работ.xls')}"
+                'attachment; filename="work_execution.xlsx"; '
+                f"filename*=UTF-8''{quote('Регистр_работ.xlsx')}"
             ),
         },
     )

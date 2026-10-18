@@ -40,6 +40,7 @@ ENTITY_PRIORITY = {
     "persons": 30,
     "counterparties": 40,
     "organizations": 50,
+    "warehouses": 65,
     "contracts": 55,
     "objects": 60,
     "works": 70,
@@ -49,6 +50,7 @@ ENTITY_PRIORITY = {
     "payment_schedules": 110,
     "goods_receipts": 113,
     "goods_issues": 116,
+    "goods_transfers": 118,
     "payment_transactions": 120,
 }
 
@@ -60,6 +62,7 @@ ENTITY_TABLE_MAP = {
     "works": "works",
     "persons": "persons",
     "organizations": "organizations",
+    "warehouses": "warehouses",
     "contracts": "contracts",
     "estimates": "estimates",
     "daily_reports": "daily_reports",
@@ -67,10 +70,20 @@ ENTITY_TABLE_MAP = {
     "payment_schedules": "payment_schedules",
     "goods_receipts": "goods_receipts",
     "goods_issues": "goods_issues",
+    "goods_transfers": "goods_transfers",
     "payment_transactions": "payment_transactions",
 }
 
 REFERENCE_SYNC_CONFIG: dict[str, dict[str, Any]] = {
+    "warehouses": {
+        "table": "warehouses",
+        "fields": ["code", "name", "address", "marked_for_deletion"],
+        "relations": {
+            "organization_id": ("organizations", "organization_uuid"),
+            "default_object_id": ("objects", "default_object_uuid"),
+            "responsible_id": ("persons", "responsible_uuid"),
+        },
+    },
     "counterparties": {
         "table": "counterparties",
         "fields": ["name", "inn", "contact_person", "phone", "marked_for_deletion", "is_group"],
@@ -244,9 +257,10 @@ def _serialize_units(connection: sqlite3.Connection, entity_uuid: str) -> dict[s
 def _serialize_materials(connection: sqlite3.Connection, entity_uuid: str) -> dict[str, Any] | None:
     row = connection.execute(
         """
-        SELECT m.*, u.uuid AS unit_uuid, u.name AS unit_name
+        SELECT m.*, u.uuid AS unit_uuid, u.name AS unit_name, parent.uuid AS parent_uuid
         FROM materials m
         LEFT JOIN units u ON u.id = m.unit_id
+        LEFT JOIN materials parent ON parent.id = m.parent_id
         WHERE m.uuid = ?
         """,
         (entity_uuid,),
@@ -310,6 +324,20 @@ def _serialize_organizations(connection: sqlite3.Connection, entity_uuid: str) -
         LEFT JOIN organizations parent ON parent.id = org.parent_id
         WHERE org.uuid = ?
         """,
+        (entity_uuid,),
+    ).fetchone()
+    return row_to_dict(row) if row is not None else None
+
+
+def _serialize_warehouses(connection: sqlite3.Connection, entity_uuid: str) -> dict[str, Any] | None:
+    row = connection.execute(
+        """SELECT wh.*, org.uuid AS organization_uuid,
+                  ob.uuid AS default_object_uuid, p.uuid AS responsible_uuid
+           FROM warehouses wh
+           LEFT JOIN organizations org ON org.id = wh.organization_id
+           LEFT JOIN objects ob ON ob.id = wh.default_object_id
+           LEFT JOIN persons p ON p.id = wh.responsible_id
+           WHERE wh.uuid = ?""",
         (entity_uuid,),
     ).fetchone()
     return row_to_dict(row) if row is not None else None
@@ -587,10 +615,13 @@ def _serialize_goods_receipt_lines(connection: sqlite3.Connection, receipt_id: i
 
 
 def _serialize_goods_receipts(connection: sqlite3.Connection, entity_uuid: str) -> dict[str, Any] | None:
+    from api.inventory_dimensions import guard_legacy_exchange
+    guard_legacy_exchange(connection, 'receipt', {'uuid': entity_uuid})
     row = connection.execute(
         """
         SELECT gr.*,
             org.uuid AS organization_uuid, org.name AS organization_name,
+            wh.uuid AS warehouse_uuid, wh.name AS warehouse_name,
             cp.uuid AS counterparty_uuid, cp.name AS counterparty_name,
             ct.uuid AS contract_uuid, ct.number AS contract_number,
             o.uuid AS object_uuid, o.name AS object_name,
@@ -598,6 +629,7 @@ def _serialize_goods_receipts(connection: sqlite3.Connection, entity_uuid: str) 
             p.uuid AS responsible_uuid, p.full_name AS responsible_name
         FROM goods_receipts gr
         LEFT JOIN organizations org ON org.id = gr.organization_id
+        LEFT JOIN warehouses wh ON wh.id = gr.warehouse_id
         LEFT JOIN counterparties cp ON cp.id = gr.counterparty_id
         LEFT JOIN contracts ct ON ct.id = gr.contract_id
         LEFT JOIN objects o ON o.id = gr.object_id
@@ -615,6 +647,7 @@ def _serialize_goods_receipts(connection: sqlite3.Connection, entity_uuid: str) 
         if not receipt.get("is_deleted")
         else []
     )
+    guard_legacy_exchange(connection, 'receipt', receipt)
     return receipt
 
 
@@ -640,10 +673,13 @@ def _serialize_goods_issue_lines(connection: sqlite3.Connection, issue_id: int) 
 
 
 def _serialize_goods_issues(connection: sqlite3.Connection, entity_uuid: str) -> dict[str, Any] | None:
+    from api.inventory_dimensions import guard_legacy_exchange
+    guard_legacy_exchange(connection, 'issue', {'uuid': entity_uuid})
     row = connection.execute(
         """
         SELECT gi.*,
             org.uuid AS organization_uuid, org.name AS organization_name,
+            wh.uuid AS warehouse_uuid, wh.name AS warehouse_name,
             cp.uuid AS counterparty_uuid, cp.name AS counterparty_name,
             ct.uuid AS contract_uuid, ct.number AS contract_number,
             o.uuid AS object_uuid, o.name AS object_name,
@@ -651,6 +687,7 @@ def _serialize_goods_issues(connection: sqlite3.Connection, entity_uuid: str) ->
             p.uuid AS responsible_uuid, p.full_name AS responsible_name
         FROM goods_issues gi
         LEFT JOIN organizations org ON org.id = gi.organization_id
+        LEFT JOIN warehouses wh ON wh.id = gi.warehouse_id
         LEFT JOIN counterparties cp ON cp.id = gi.counterparty_id
         LEFT JOIN contracts ct ON ct.id = gi.contract_id
         LEFT JOIN objects o ON o.id = gi.object_id
@@ -668,8 +705,42 @@ def _serialize_goods_issues(connection: sqlite3.Connection, entity_uuid: str) ->
         if not issue.get("is_deleted")
         else []
     )
+    guard_legacy_exchange(connection, 'issue', issue)
     return issue
 
+
+def _serialize_goods_transfers(connection: sqlite3.Connection, entity_uuid: str) -> dict[str, Any] | None:
+    from api.inventory_dimensions import guard_legacy_exchange
+    guard_legacy_exchange(connection, 'transfer', {'uuid': entity_uuid})
+    row = connection.execute(
+        """SELECT t.*, org.uuid AS organization_uuid,
+                  src.uuid AS source_warehouse_uuid, dst.uuid AS destination_warehouse_uuid,
+                  so.uuid AS source_object_uuid, do.uuid AS destination_object_uuid,
+                  p.uuid AS responsible_uuid
+           FROM goods_transfers t
+           LEFT JOIN organizations org ON org.id = t.organization_id
+           LEFT JOIN warehouses src ON src.id = t.source_warehouse_id
+           LEFT JOIN warehouses dst ON dst.id = t.destination_warehouse_id
+           LEFT JOIN objects so ON so.id = t.source_object_id
+           LEFT JOIN objects do ON do.id = t.destination_object_id
+           LEFT JOIN persons p ON p.id = t.responsible_id
+           WHERE t.uuid = ?""",
+        (entity_uuid,),
+    ).fetchone()
+    if row is None:
+        return None
+    transfer = row_to_dict(row) or {}
+    lines = connection.execute(
+        """SELECT l.*, m.uuid AS material_uuid, u.uuid AS unit_uuid
+           FROM goods_transfer_lines l
+           LEFT JOIN materials m ON m.id = l.material_id
+           LEFT JOIN units u ON u.id = l.unit_id
+           WHERE l.transfer_id = ? AND l.marked_for_deletion = 0
+           ORDER BY l.line_number""", (transfer["id"],),
+    ).fetchall()
+    transfer["lines"] = rows_to_dicts(lines) if not transfer.get("is_deleted") else []
+    guard_legacy_exchange(connection, 'transfer', transfer)
+    return transfer
 
 SERIALIZER_MAP = {
     "units": _serialize_units,
@@ -678,6 +749,7 @@ SERIALIZER_MAP = {
     "objects": _serialize_objects,
     "persons": _serialize_persons,
     "organizations": _serialize_organizations,
+    "warehouses": _serialize_warehouses,
     "contracts": _serialize_contracts,
     "works": _serialize_works,
     "estimates": _serialize_estimates,
@@ -686,6 +758,7 @@ SERIALIZER_MAP = {
     "payment_schedules": _serialize_payment_schedules,
     "goods_receipts": _serialize_goods_receipts,
     "goods_issues": _serialize_goods_issues,
+    "goods_transfers": _serialize_goods_transfers,
     "payment_transactions": _serialize_payment_transactions,
 }
 
@@ -814,12 +887,15 @@ def _upsert_unit_entity(connection: sqlite3.Connection, payload: dict[str, Any])
 
 
 def _upsert_material_entity(connection: sqlite3.Connection, payload: dict[str, Any]) -> int:
+    from api.inventory_dimensions import lock_material_dimensions, validate_material_unit_change
     normalized = _coerce_common_fields(payload)
     data = {
         "code": normalized.get("code"),
         "name": normalized.get("name"),
         "unit_id": _resolve_entity_id(connection, "units", normalized.get("unit_uuid")),
         "price": float(normalized.get("price") or 0),
+        "parent_id": _resolve_entity_id(connection, "materials", normalized.get("parent_uuid")),
+        "is_group": int(bool(normalized.get("is_group", 0))),
         "marked_for_deletion": int(bool(normalized.get("marked_for_deletion", normalized["is_deleted"]))),
         "created_at": normalized["created_at"],
         "modified_at": normalized["modified_at"],
@@ -837,6 +913,8 @@ def _upsert_material_entity(connection: sqlite3.Connection, payload: dict[str, A
         )
         return last_insert_id(connection)
 
+    lock_material_dimensions(connection, existing['id'])
+    validate_material_unit_change(connection, existing['id'], data['unit_id'])
     assignments = ", ".join(f"{column} = ?" for column in data.keys())
     connection.execute(
         f"UPDATE materials SET {assignments} WHERE id = ?",
@@ -1320,6 +1398,8 @@ def _mark_contract_deleted(connection: sqlite3.Connection, entity_uuid: str, upd
 
 
 def _mark_goods_receipt_deleted(connection: sqlite3.Connection, entity_uuid: str, updated_at: str) -> bool:
+    from api.inventory_dimensions import guard_legacy_exchange
+    guard_legacy_exchange(connection, 'receipt', {'uuid': entity_uuid}, for_write=True)
     existing = _get_entity_row(connection, "goods_receipts", entity_uuid)
     if existing is None:
         return False
@@ -1347,6 +1427,8 @@ def _mark_goods_receipt_deleted(connection: sqlite3.Connection, entity_uuid: str
 
 
 def _mark_goods_issue_deleted(connection: sqlite3.Connection, entity_uuid: str, updated_at: str) -> bool:
+    from api.inventory_dimensions import guard_legacy_exchange
+    guard_legacy_exchange(connection, 'issue', {'uuid': entity_uuid}, for_write=True)
     existing = _get_entity_row(connection, "goods_issues", entity_uuid)
     if existing is None:
         return False
@@ -1372,6 +1454,27 @@ def _mark_goods_issue_deleted(connection: sqlite3.Connection, entity_uuid: str, 
     )
     return True
 
+def _mark_goods_transfer_deleted(connection: sqlite3.Connection, entity_uuid: str, updated_at: str) -> bool:
+    from api.inventory_dimensions import guard_legacy_exchange
+    guard_legacy_exchange(connection, 'transfer', {'uuid': entity_uuid}, for_write=True)
+    existing = _get_entity_row(connection, "goods_transfers", entity_uuid)
+    if existing is None:
+        return False
+    connection.execute(
+        """UPDATE goods_transfers SET marked_for_deletion = 1, is_deleted = 1,
+           is_posted = 0, posted_at = NULL, modified_at = ?, updated_at = ? WHERE id = ?""",
+        (updated_at, updated_at, existing["id"]),
+    )
+    connection.execute(
+        """UPDATE goods_transfer_lines SET marked_for_deletion = 1, is_deleted = 1,
+           modified_at = ?, updated_at = ? WHERE transfer_id = ?""",
+        (updated_at, updated_at, existing["id"]),
+    )
+    connection.execute(
+        "DELETE FROM inventory_register WHERE recorder_type = 'goods_transfer' AND recorder_id = ?",
+        (existing["id"],),
+    )
+    return True
 
 DELETE_HANDLER_MAP = {
     "units": _mark_unit_deleted,
@@ -1380,6 +1483,7 @@ DELETE_HANDLER_MAP = {
     "objects": lambda c, u, t: _mark_reference_deleted(c, "objects", u, t),
     "persons": lambda c, u, t: _mark_reference_deleted(c, "persons", u, t),
     "organizations": lambda c, u, t: _mark_reference_deleted(c, "organizations", u, t),
+    "warehouses": lambda c, u, t: _mark_reference_deleted(c, "warehouses", u, t),
     "works": _mark_work_deleted,
     "contracts": _mark_contract_deleted,
     "estimates": _mark_estimate_deleted,
@@ -1388,6 +1492,7 @@ DELETE_HANDLER_MAP = {
     "payment_schedules": _mark_payment_schedule_deleted,
     "goods_receipts": _mark_goods_receipt_deleted,
     "goods_issues": _mark_goods_issue_deleted,
+    "goods_transfers": lambda c, u, t: _mark_goods_transfer_deleted(c, u, t),
     "payment_transactions": _mark_payment_transaction_deleted,
 }
 
@@ -1562,6 +1667,7 @@ def _upsert_payment_transaction_entity(connection: sqlite3.Connection, payload: 
         "object_id": _resolve_entity_id(connection, "objects", normalized.get("object_uuid")),
         "linked_schedule_id": linked_schedule_id,
         "linked_line_id": linked_line_id,
+        "allow_advance": int(bool(normalized.get("allow_advance", 0))),
         "amount": float(normalized.get("amount") or 0),
         "description": normalized.get("description"),
         "is_posted": int(bool(normalized.get("is_posted", 0))),
@@ -1644,10 +1750,10 @@ def _sync_goods_issue_lines(connection: sqlite3.Connection, *, issue_id: int, li
             """
             INSERT INTO goods_issue_lines (
                 issue_id, line_number, material_id, name, unit_id, unit,
-                quantity, price_without_vat, vat_rate, vat_amount, sum_without_vat, sum_with_vat,
+                quantity, price_without_vat, vat_rate, vat_amount, sum_without_vat, sum_with_vat, inventory_cost,
                 object_id, drawing_code, note,
                 marked_for_deletion, created_at, modified_at, uuid, updated_at, is_deleted
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0)
             """,
             (
                 issue_id,
@@ -1662,6 +1768,7 @@ def _sync_goods_issue_lines(connection: sqlite3.Connection, *, issue_id: int, li
                 round(float(normalized.get("vat_amount", 0)), 2),
                 round(float(normalized.get("sum_without_vat", 0)), 2),
                 round(float(normalized.get("sum_with_vat", 0)), 2),
+                normalized.get("inventory_cost"),
                 _resolve_entity_id(connection, "objects", normalized.get("object_uuid")),
                 normalized.get("drawing_code"),
                 normalized.get("note"),
@@ -1693,11 +1800,11 @@ def _rebuild_goods_document_register(connection: sqlite3.Connection, kind: str, 
             """
             INSERT INTO inventory_register (
                 recorder_type, recorder_id, line_number, period,
-                material_id, object_id, unit_id,
+                material_id, warehouse_id, object_id, unit_id,
                 quantity_income, quantity_expense, sum_income, sum_expense,
                 created_at, uuid, updated_at, is_deleted
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
                 recorder_type,
@@ -1705,12 +1812,13 @@ def _rebuild_goods_document_register(connection: sqlite3.Connection, kind: str, 
                 int(line["line_number"]),
                 str(doc["date"]),
                 line.get("material_id"),
+                doc.get("warehouse_id"),
                 line_object_id,
                 line.get("unit_id"),
                 round(float(line.get("quantity") or 0), 6) if kind == "receipt" else 0.0,
                 round(float(line.get("quantity") or 0), 6) if kind == "issue" else 0.0,
                 round(float(line.get("sum_without_vat") or 0), 2) if kind == "receipt" else 0.0,
-                round(float(line.get("sum_without_vat") or 0), 2) if kind == "issue" else 0.0,
+                round(float(line.get("inventory_cost") if line.get("inventory_cost") is not None else line.get("sum_without_vat") or 0), 2) if kind == "issue" else 0.0,
                 stamp,
                 new_uuid(),
                 stamp,
@@ -1787,11 +1895,15 @@ def _upsert_contract_entity(connection: sqlite3.Connection, payload: dict[str, A
 
 
 def _upsert_goods_receipt_entity(connection: sqlite3.Connection, payload: dict[str, Any]) -> int:
+    from api.inventory_dimensions import guard_legacy_exchange
+    guard_legacy_exchange(connection, 'receipt', payload, for_write=True)
     normalized = _coerce_common_fields(payload)
     data = {
         "number": normalized.get("number"),
         "date": str(normalized.get("date")),
         "organization_id": _resolve_entity_id(connection, "organizations", normalized.get("organization_uuid")),
+        "warehouse_id": _resolve_entity_id(connection, "warehouses", normalized.get("warehouse_uuid")),
+        "warehouse": str(normalized.get("warehouse_name") or normalized.get("warehouse") or ""),
         "counterparty_id": _resolve_entity_id(connection, "counterparties", normalized.get("counterparty_uuid")),
         "contract_id": _resolve_entity_id(connection, "contracts", normalized.get("contract_uuid")),
         "object_id": _resolve_entity_id(connection, "objects", normalized.get("object_uuid")),
@@ -1851,11 +1963,15 @@ def _upsert_goods_receipt_entity(connection: sqlite3.Connection, payload: dict[s
 
 
 def _upsert_goods_issue_entity(connection: sqlite3.Connection, payload: dict[str, Any]) -> int:
+    from api.inventory_dimensions import guard_legacy_exchange
+    guard_legacy_exchange(connection, 'issue', payload, for_write=True)
     normalized = _coerce_common_fields(payload)
     data = {
         "number": normalized.get("number"),
         "date": str(normalized.get("date")),
         "organization_id": _resolve_entity_id(connection, "organizations", normalized.get("organization_uuid")),
+        "warehouse_id": _resolve_entity_id(connection, "warehouses", normalized.get("warehouse_uuid")),
+        "warehouse": str(normalized.get("warehouse_name") or normalized.get("warehouse") or ""),
         "counterparty_id": _resolve_entity_id(connection, "counterparties", normalized.get("counterparty_uuid")),
         "contract_id": _resolve_entity_id(connection, "contracts", normalized.get("contract_uuid")),
         "object_id": _resolve_entity_id(connection, "objects", normalized.get("object_uuid")),
@@ -1914,6 +2030,99 @@ def _upsert_goods_issue_entity(connection: sqlite3.Connection, payload: dict[str
     return doc_id
 
 
+def _rebuild_goods_transfer_register(connection: sqlite3.Connection, transfer_id: int) -> None:
+    connection.execute(
+        "DELETE FROM inventory_register WHERE recorder_type = 'goods_transfer' AND recorder_id = ?",
+        (transfer_id,),
+    )
+    transfer = connection.execute(
+        "SELECT * FROM goods_transfers WHERE id = ?", (transfer_id,)
+    ).fetchone()
+    if transfer is None or transfer["is_deleted"] or not transfer["is_posted"]:
+        return
+    lines = connection.execute(
+        """SELECT * FROM goods_transfer_lines WHERE transfer_id = ?
+           AND marked_for_deletion = 0 ORDER BY line_number""", (transfer_id,)
+    ).fetchall()
+    stamp = str(transfer["updated_at"] or utcnow_iso())
+    for line in lines:
+        for side, warehouse_id, object_id in (
+            ("source", transfer["source_warehouse_id"], transfer["source_object_id"]),
+            ("destination", transfer["destination_warehouse_id"], transfer["destination_object_id"]),
+        ):
+            expense = side == "source"
+            connection.execute(
+                """INSERT INTO inventory_register
+                   (recorder_type, recorder_id, line_number, period, material_id,
+                    warehouse_id, movement_side, object_id, unit_id,
+                    quantity_income, quantity_expense, sum_income, sum_expense,
+                    uuid, created_at, updated_at)
+                   VALUES ('goods_transfer', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (transfer_id, line["line_number"], transfer["date"], line["material_id"],
+                 warehouse_id, side, object_id, line["unit_id"],
+                 0.0 if expense else line["quantity"], line["quantity"] if expense else 0.0,
+                 0.0 if expense else line["sum"], line["sum"] if expense else 0.0,
+                 new_uuid(), stamp, stamp),
+            )
+
+
+def _upsert_goods_transfer_entity(connection: sqlite3.Connection, payload: dict[str, Any]) -> int:
+    from api.inventory_dimensions import guard_legacy_exchange
+    guard_legacy_exchange(connection, 'transfer', payload, for_write=True)
+    normalized = _coerce_common_fields(payload)
+    data = {
+        "number": normalized.get("number") or "",
+        "date": str(normalized.get("date")),
+        "organization_id": _resolve_entity_id(connection, "organizations", normalized.get("organization_uuid")),
+        "source_warehouse_id": _resolve_entity_id(connection, "warehouses", normalized.get("source_warehouse_uuid")),
+        "destination_warehouse_id": _resolve_entity_id(connection, "warehouses", normalized.get("destination_warehouse_uuid")),
+        "source_object_id": _resolve_entity_id(connection, "objects", normalized.get("source_object_uuid")),
+        "destination_object_id": _resolve_entity_id(connection, "objects", normalized.get("destination_object_uuid")),
+        "responsible_id": _resolve_entity_id(connection, "persons", normalized.get("responsible_uuid")),
+        "description": normalized.get("description"),
+        "is_posted": int(bool(normalized.get("is_posted", 0))),
+        "posted_at": normalized.get("posted_at"),
+        "marked_for_deletion": int(bool(normalized.get("marked_for_deletion", normalized["is_deleted"]))),
+        "created_at": normalized["created_at"],
+        "modified_at": normalized["modified_at"],
+        "uuid": normalized["uuid"],
+        "updated_at": normalized["updated_at"],
+        "is_deleted": normalized["is_deleted"],
+    }
+    existing = _get_entity_row(connection, "goods_transfers", normalized["uuid"])
+    if existing is None:
+        columns = ", ".join(data)
+        connection.execute(
+            f"INSERT INTO goods_transfers ({columns}) VALUES ({', '.join('?' for _ in data)})",
+            list(data.values()),
+        )
+        transfer_id = last_insert_id(connection)
+    else:
+        connection.execute(
+            f"UPDATE goods_transfers SET {', '.join(f'{key} = ?' for key in data)} WHERE id = ?",
+            [*data.values(), existing["id"]],
+        )
+        transfer_id = int(existing["id"])
+    connection.execute("DELETE FROM goods_transfer_lines WHERE transfer_id = ?", (transfer_id,))
+    for raw_line in normalized.get("lines", []) or []:
+        line = _coerce_common_fields(raw_line)
+        connection.execute(
+            """INSERT INTO goods_transfer_lines
+               (transfer_id, line_number, material_id, name, unit_id, quantity,
+                unit_cost, sum, note, marked_for_deletion, created_at, modified_at,
+                uuid, updated_at, is_deleted)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (transfer_id, line["line_number"],
+             _resolve_entity_id(connection, "materials", line.get("material_uuid")),
+             line["name"], _resolve_entity_id(connection, "units", line.get("unit_uuid")),
+             line["quantity"], line.get("unit_cost") or 0, line.get("sum") or 0,
+             line.get("note"), int(bool(line.get("marked_for_deletion", 0))),
+             line["created_at"], line["modified_at"], line["uuid"],
+             line["updated_at"], line["is_deleted"]),
+        )
+    _rebuild_goods_transfer_register(connection, transfer_id)
+    return transfer_id
+
 UPSERT_HANDLER_MAP = {
     "units": _upsert_unit_entity,
     "materials": _upsert_material_entity,
@@ -1921,6 +2130,7 @@ UPSERT_HANDLER_MAP = {
     "objects": lambda c, p: _upsert_reference_entity(c, entity_type="objects", payload=p),
     "persons": lambda c, p: _upsert_reference_entity(c, entity_type="persons", payload=p),
     "organizations": lambda c, p: _upsert_reference_entity(c, entity_type="organizations", payload=p),
+    "warehouses": lambda c, p: _upsert_reference_entity(c, entity_type="warehouses", payload=p),
     "works": _upsert_work_entity,
     "contracts": _upsert_contract_entity,
     "estimates": _upsert_estimate_entity,
@@ -1929,6 +2139,7 @@ UPSERT_HANDLER_MAP = {
     "payment_schedules": _upsert_payment_schedule_entity,
     "goods_receipts": _upsert_goods_receipt_entity,
     "goods_issues": _upsert_goods_issue_entity,
+    "goods_transfers": _upsert_goods_transfer_entity,
     "payment_transactions": _upsert_payment_transaction_entity,
 }
 

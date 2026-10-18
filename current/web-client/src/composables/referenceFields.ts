@@ -8,10 +8,15 @@ export type ReferenceRecordLike = Record<string, any>
 export type FieldConfig = {
   key: string
   label: string
-  type: 'text' | 'number' | 'select' | 'checkbox'
+  type: 'text' | 'number' | 'select' | 'checkbox' | 'reference-picker'
   checkboxLabel?: string
   defaultValue?: string | number | boolean | null
   options?: () => Array<{ id: number; label: string }>
+  referenceKind?: ReferenceKind
+  referenceLabelKey?: string
+  selectedLabelKey?: string
+  referenceCaptionKey?: string
+  pickerTitle?: string
 }
 
 export type Column = {
@@ -35,12 +40,36 @@ export interface ReferenceConfig {
   columns: Column[]
 }
 
-export function getReferenceConfig(kind: ReferenceKind, h: ReferenceFieldHelpers): ReferenceConfig {
+export function getReferenceConfig(kind: ReferenceKind, h: ReferenceFieldHelpers, isAdmin = true): ReferenceConfig {
   const sharedTail: FieldConfig[] = [
     { key: 'parent_id', label: 'Родительская группа (ID)', type: 'number' },
     { key: 'is_group', label: 'Тип записи', type: 'checkbox', checkboxLabel: 'Это группа' },
   ]
   const mapping: Record<ReferenceKind, ReferenceConfig> = {
+    'material-packages': {
+      title: 'Упаковки товаров', singular: 'упаковка', description: 'Количество базовых единиц в одной упаковке.',
+      modalDescription: 'Цена в документе задается за упаковку. После использования коэффициент изменить нельзя.',
+      fields: [
+        { key: 'name', label: 'Наименование', type: 'text' },
+        { key: 'material_id', label: 'Товар', type: 'reference-picker', referenceKind: 'materials', referenceLabelKey: 'name', selectedLabelKey: 'material_name' },
+        { key: 'factor', label: 'Базовых единиц в упаковке', type: 'number', defaultValue: 1 },
+      ], columns: [{ key: 'name', label: 'Упаковка' }, { key: 'material_name', label: 'Товар' }, { key: 'factor', label: 'Коэффициент' }, { key: 'actions', label: 'Действия' }],
+    },
+    'material-characteristics': {
+      title: 'Характеристики товаров', singular: 'характеристика', description: 'Отдельные складские остатки и себестоимость по характеристикам.',
+      modalDescription: 'Характеристика принадлежит конкретному товару.',
+      fields: [{ key: 'name', label: 'Наименование', type: 'text' },
+        { key: 'material_id', label: 'Товар', type: 'reference-picker', referenceKind: 'materials', referenceLabelKey: 'name', selectedLabelKey: 'material_name' }],
+      columns: [{ key: 'name', label: 'Характеристика' }, { key: 'material_name', label: 'Товар' }, { key: 'actions', label: 'Действия' }],
+    },
+    'material-series': {
+      title: 'Серии товаров', singular: 'серия', description: 'Остатки и себестоимость по сериям товара.',
+      modalDescription: 'Можно ограничить серию конкретной характеристикой.',
+      fields: [{ key: 'name', label: 'Наименование', type: 'text' },
+        { key: 'material_id', label: 'Товар', type: 'reference-picker', referenceKind: 'materials', referenceLabelKey: 'name', selectedLabelKey: 'material_name' },
+        { key: 'characteristic_id', label: 'Характеристика', type: 'reference-picker', referenceKind: 'material-characteristics', referenceLabelKey: 'name', selectedLabelKey: 'characteristic_name' }],
+      columns: [{ key: 'name', label: 'Серия' }, { key: 'material_name', label: 'Товар' }, { key: 'actions', label: 'Действия' }],
+    },
     counterparties: {
       title: 'Контрагенты',
       singular: 'контрагент',
@@ -175,11 +204,22 @@ export function getReferenceConfig(kind: ReferenceKind, h: ReferenceFieldHelpers
         { key: 'amount', label: 'Сумма', type: 'number', defaultValue: 0 },
         { key: 'vat_rate', label: 'НДС, %', type: 'number', defaultValue: 20 },
         { key: 'payment_deferral_days', label: 'Отсрочка оплаты, дней', type: 'number', defaultValue: 0 },
+        { key: 'credit_limit', label: 'Кредитный лимит (администратор)', type: 'number', defaultValue: null },
+        { key: 'credit_limit_strict', label: 'Контроль кредита', type: 'checkbox', checkboxLabel: 'Строгий лимит договора', defaultValue: false },
         { key: 'currency', label: 'Валюта', type: 'text', defaultValue: 'RUB' },
         { key: 'agreement_date', label: 'Дата договора', type: 'text' },
         { key: 'valid_until', label: 'Срок действия', type: 'text' },
         { key: 'description', label: 'Описание', type: 'text' },
-        { key: 'parent_id', label: 'Родительский договор (ID, для доп.соглашения)', type: 'number' },
+        {
+          key: 'parent_id',
+          label: 'Родительский договор',
+          type: 'reference-picker',
+          referenceKind: 'contracts',
+          referenceLabelKey: 'number',
+          selectedLabelKey: 'parent_number',
+          referenceCaptionKey: 'counterparty_name',
+          pickerTitle: 'Выбор родительского договора',
+        },
       ],
       columns: [
         { key: 'number', label: 'Номер' },
@@ -208,17 +248,49 @@ export function getReferenceConfig(kind: ReferenceKind, h: ReferenceFieldHelpers
           options: () => h.units.value.map((item) => ({ id: item.id, label: item.name })),
         },
         { key: 'price', label: 'Цена', type: 'number', defaultValue: 0 },
+        ...sharedTail,
       ],
       columns: [
         { key: 'name', label: 'Наименование' },
         { key: 'code', label: 'Код' },
         { key: 'unit_name', label: 'Единица' },
         { key: 'price', label: 'Цена' },
+        { key: 'parent_name', label: 'Папка' },
+        { key: 'is_group', label: 'Группа' },
+        { key: 'actions', label: 'Действия' },
+      ],
+    },
+    warehouses: {
+      title: 'Склады',
+      singular: 'склад',
+      description: 'Места хранения ТМЦ по организациям.',
+      modalDescription: 'Склад используется в поступлениях, списаниях и перемещениях ТМЦ.',
+      fields: [
+        { key: 'order_receipt_enabled', label: 'Схема приемки', type: 'checkbox', checkboxLabel: 'Отдельный приходный ордер', defaultValue: false },
+        { key: 'order_issue_enabled', label: 'Схема отгрузки', type: 'checkbox', checkboxLabel: 'Отдельный расходный ордер', defaultValue: false },
+        { key: 'name', label: 'Наименование', type: 'text' },
+        { key: 'code', label: 'Код', type: 'text', defaultValue: '' },
+        { key: 'organization_id', label: 'Организация', type: 'select',
+          options: () => h.organizations.value.map((item) => ({ id: item.id, label: item.name })) },
+        { key: 'default_object_id', label: 'Объект по умолчанию', type: 'reference-picker',
+          referenceKind: 'objects', referenceLabelKey: 'name', selectedLabelKey: 'default_object_name', pickerTitle: 'Выбор объекта' },
+        { key: 'responsible_id', label: 'Ответственный', type: 'reference-picker',
+          referenceKind: 'persons', referenceLabelKey: 'full_name', selectedLabelKey: 'responsible_name', pickerTitle: 'Выбор ответственного' },
+        { key: 'address', label: 'Адрес', type: 'text' },
+      ],
+      columns: [
+        { key: 'name', label: 'Наименование' },
+        { key: 'code', label: 'Код' },
+        { key: 'organization_name', label: 'Организация' },
+        { key: 'default_object_name', label: 'Объект' },
+        { key: 'responsible_name', label: 'Ответственный' },
         { key: 'actions', label: 'Действия' },
       ],
     },
   }
-  return mapping[kind]
+  const result = mapping[kind]
+  if (kind === 'contracts' && !isAdmin) result.fields = result.fields.filter(field => !['credit_limit', 'credit_limit_strict'].includes(field.key))
+  return result
 }
 
 export async function loadReferenceHelpers(kind: ReferenceKind, h: ReferenceFieldHelpers): Promise<void> {
@@ -226,7 +298,7 @@ export async function loadReferenceHelpers(kind: ReferenceKind, h: ReferenceFiel
     const response = await listReferences('counterparties', { page_size: 50 })
     h.counterparties.value = response.data as ReferenceRecordLike[]
   }
-  if (kind === 'contracts') {
+  if (kind === 'contracts' || kind === 'warehouses') {
     const response = await listReferences('organizations', { page_size: 50 })
     h.organizations.value = response.data as ReferenceRecordLike[]
   }
@@ -241,7 +313,8 @@ export async function loadReferenceHelpers(kind: ReferenceKind, h: ReferenceFiel
 }
 
 export function buildReferencePayload(form: ReferenceRecordLike, fields: FieldConfig[]): ReferenceRecordLike {
-  const payload = { ...form }
+  const analytic = fields.some(field => field.key === 'material_id' && field.referenceKind === 'materials')
+  const payload = analytic ? Object.fromEntries(fields.map(field => [field.key, form[field.key]])) : { ...form }
   fields.forEach((field) => {
     if (field.type === 'number') {
       payload[field.key] =

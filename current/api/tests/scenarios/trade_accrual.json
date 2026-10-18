@@ -1,0 +1,14 @@
+{
+  "id": "TRADE-ACCRUAL-001",
+  "receipt_date": "2026-10-01",
+  "issue_date": "2026-10-02",
+  "vat_rate": 20,
+  "receipt_price": 100,
+  "issue_price": 150,
+  "slices": [
+    {"organization": "A", "counterparty": "X", "contract": "AX-1", "receipt_quantity": 10, "issue_quantity": 3, "payable": 1200, "receivable": 540, "stock_quantity": 7, "stock_cost": 700},
+    {"organization": "A", "counterparty": "X", "contract": "AX-2", "receipt_quantity": 20, "issue_quantity": 6, "payable": 2400, "receivable": 1080, "stock_quantity": 14, "stock_cost": 1400},
+    {"organization": "A", "counterparty": "Y", "contract": "AY-1", "receipt_quantity": 30, "issue_quantity": 9, "payable": 3600, "receivable": 1620, "stock_quantity": 21, "stock_cost": 2100},
+    {"organization": "B", "counterparty": "X", "contract": "BX-1", "receipt_quantity": 40, "issue_quantity": 12, "payable": 4800, "receivable": 2160, "stock_quantity": 28, "stock_cost": 2800}
+  ]
+}

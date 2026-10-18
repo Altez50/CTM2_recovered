@@ -5,12 +5,16 @@ from __future__ import annotations
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from api.auth_dependencies import get_current_user, get_db, require_roles
 from api.list_query import parse_quick_filters
-from api.text_import_export import export_document, import_document_lines
+from api.text_import_export import (
+    export_document,
+    import_document_lines,
+    read_limited_import_body,
+)
 from api.cost_accounting_services import (
     calculate_cost,
     cancel_overhead_distribution,
@@ -50,6 +54,7 @@ from api.cost_accounting_services import (
     restore_machinery_usage_report,
     restore_subcontract_acceptance,
     restore_overhead_expense,
+    restore_cost_calculation,
     save_cost_calculation,
     save_machine,
     save_machinery_usage_report,
@@ -83,8 +88,47 @@ from api.models.cost_accounting import (
 
 router = APIRouter(prefix="/api/cost", tags=["cost-accounting"])
 
-# Role check for admin-only operations (posting, distribution, calculation)
+# Office lifecycle operations are available to the two accounting roles.
 AdminOrManager = Depends(require_roles("admin", "manager"))
+
+
+def _field_cost_payload(payload: dict, user: UserInfo) -> dict:
+    """Apply RBAC=B ownership rules to a field cost document payload."""
+    if user.role in ("admin", "manager"):
+        return payload
+    if user.role != "foreman":
+        raise HTTPException(status_code=403, detail="Insufficient permissions for this operation")
+    if not user.person_id:
+        raise HTTPException(status_code=403, detail="Foreman account is not linked to a person")
+    requested_foreman_id = payload.get("foreman_id")
+    if requested_foreman_id not in (None, user.person_id):
+        raise HTTPException(status_code=403, detail="Foreman can only manage own documents")
+    payload["foreman_id"] = user.person_id
+    return payload
+
+
+def _require_field_cost_owner(
+    connection: sqlite3.Connection,
+    *,
+    table: str,
+    document_id: int,
+    user: UserInfo,
+) -> None:
+    """Allow admin/manager or the foreman assigned to this field document."""
+    if user.role in ("admin", "manager"):
+        return
+    if user.role != "foreman" or not user.person_id:
+        raise HTTPException(status_code=403, detail="Insufficient permissions for this operation")
+    if table not in {"material_consumptions", "machinery_usage_reports"}:
+        raise RuntimeError(f"Unsupported field cost document table: {table}")
+    row = connection.execute(
+        f"SELECT foreman_id FROM {table} WHERE id = ? AND marked_for_deletion = 0",
+        (document_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Cost document not found")
+    if row["foreman_id"] != user.person_id:
+        raise HTTPException(status_code=403, detail="Foreman can only manage own documents")
 
 
 # ── Reference Data ────────────────────────────────────────────────────────
@@ -188,7 +232,8 @@ def create_mc_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiResponse:
-    return ApiResponse(data=save_material_consumption(connection, payload.model_dump()), message="Material consumption created")
+    data = _field_cost_payload(payload.model_dump(), current_user)
+    return ApiResponse(data=save_material_consumption(connection, data), message="Material consumption created")
 
 
 @router.get("/material-consumptions/{doc_id}", response_model=ApiResponse)
@@ -207,8 +252,12 @@ def update_mc_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiResponse:
+    _require_field_cost_owner(
+        connection, table="material_consumptions", document_id=doc_id, user=current_user
+    )
+    data = _field_cost_payload(payload.model_dump(), current_user)
     return ApiResponse(
-        data=save_material_consumption(connection, payload.model_dump(), doc_id=doc_id),
+        data=save_material_consumption(connection, data, doc_id=doc_id),
         message="Material consumption updated",
     )
 
@@ -219,7 +268,10 @@ def delete_mc_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiMessage:
-    delete_material_consumption(connection, doc_id)
+    _require_field_cost_owner(
+        connection, table="material_consumptions", document_id=doc_id, user=current_user
+    )
+    delete_material_consumption(connection, doc_id, actor=current_user)
     return ApiMessage(message="Material consumption marked for deletion")
 
 
@@ -227,9 +279,9 @@ def delete_mc_document(
 def restore_mc_document(
     doc_id: int,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    restore_material_consumption(connection, doc_id)
+    restore_material_consumption(connection, doc_id, actor=current_user)
     return ApiMessage(message="Material consumption restored")
 
 
@@ -239,7 +291,7 @@ def post_mc_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    post_material_consumption(connection, doc_id)
+    post_material_consumption(connection, doc_id, actor=current_user)
     return ApiMessage(message="Material consumption posted")
 
 
@@ -249,7 +301,7 @@ def unpost_mc_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    unpost_material_consumption(connection, doc_id)
+    unpost_material_consumption(connection, doc_id, actor=current_user)
     return ApiMessage(message="Material consumption unposted")
 
 
@@ -282,8 +334,9 @@ def create_mur_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiResponse:
+    data = _field_cost_payload(payload.model_dump(), current_user)
     return ApiResponse(
-        data=save_machinery_usage_report(connection, payload.model_dump()),
+        data=save_machinery_usage_report(connection, data),
         message="Machinery usage report created",
     )
 
@@ -304,8 +357,12 @@ def update_mur_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiResponse:
+    _require_field_cost_owner(
+        connection, table="machinery_usage_reports", document_id=doc_id, user=current_user
+    )
+    data = _field_cost_payload(payload.model_dump(), current_user)
     return ApiResponse(
-        data=save_machinery_usage_report(connection, payload.model_dump(), doc_id=doc_id),
+        data=save_machinery_usage_report(connection, data, doc_id=doc_id),
         message="Machinery usage report updated",
     )
 
@@ -316,8 +373,21 @@ def delete_mur_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, Depends(get_current_user)],
 ) -> ApiMessage:
-    delete_machinery_usage_report(connection, doc_id)
+    _require_field_cost_owner(
+        connection, table="machinery_usage_reports", document_id=doc_id, user=current_user
+    )
+    delete_machinery_usage_report(connection, doc_id, actor=current_user)
     return ApiMessage(message="Machinery usage report marked for deletion")
+
+
+@router.post("/machinery-usage-reports/{doc_id}/restore", response_model=ApiMessage)
+def restore_mur_document(
+    doc_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, AdminOrManager],
+) -> ApiMessage:
+    restore_machinery_usage_report(connection, doc_id, actor=current_user)
+    return ApiMessage(message="Machinery usage report restored")
 
 
 @router.post("/machinery-usage-reports/{doc_id}/post", response_model=ApiMessage)
@@ -326,7 +396,7 @@ def post_mur_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    post_machinery_usage_report(connection, doc_id)
+    post_machinery_usage_report(connection, doc_id, actor=current_user)
     return ApiMessage(message="Machinery usage report posted")
 
 
@@ -336,7 +406,7 @@ def unpost_mur_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    unpost_machinery_usage_report(connection, doc_id)
+    unpost_machinery_usage_report(connection, doc_id, actor=current_user)
     return ApiMessage(message="Machinery usage report unposted")
 
 
@@ -367,7 +437,7 @@ def list_sa_documents(
 def create_sa_document(
     payload: SubcontractAcceptanceCreate,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiResponse:
     return ApiResponse(
         data=save_subcontract_acceptance(connection, payload.model_dump()),
@@ -389,7 +459,7 @@ def update_sa_document(
     doc_id: int,
     payload: SubcontractAcceptanceUpdate,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiResponse:
     return ApiResponse(
         data=save_subcontract_acceptance(connection, payload.model_dump(), doc_id=doc_id),
@@ -401,10 +471,20 @@ def update_sa_document(
 def delete_sa_document(
     doc_id: int,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    delete_subcontract_acceptance(connection, doc_id)
+    delete_subcontract_acceptance(connection, doc_id, actor=current_user)
     return ApiMessage(message="Subcontract acceptance marked for deletion")
+
+
+@router.post("/subcontract-acceptances/{doc_id}/restore", response_model=ApiMessage)
+def restore_sa_document(
+    doc_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, AdminOrManager],
+) -> ApiMessage:
+    restore_subcontract_acceptance(connection, doc_id, actor=current_user)
+    return ApiMessage(message="Subcontract acceptance restored")
 
 
 @router.post("/subcontract-acceptances/{doc_id}/post", response_model=ApiMessage)
@@ -413,7 +493,7 @@ def post_sa_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    post_subcontract_acceptance(connection, doc_id)
+    post_subcontract_acceptance(connection, doc_id, actor=current_user)
     return ApiMessage(message="Subcontract acceptance posted")
 
 
@@ -423,7 +503,7 @@ def unpost_sa_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    unpost_subcontract_acceptance(connection, doc_id)
+    unpost_subcontract_acceptance(connection, doc_id, actor=current_user)
     return ApiMessage(message="Subcontract acceptance unposted")
 
 
@@ -454,7 +534,7 @@ def list_oe_documents(
 def create_oe_document(
     payload: OverheadExpenseCreate,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiResponse:
     return ApiResponse(
         data=save_overhead_expense(connection, payload.model_dump()),
@@ -476,7 +556,7 @@ def update_oe_document(
     doc_id: int,
     payload: OverheadExpenseUpdate,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiResponse:
     return ApiResponse(
         data=save_overhead_expense(connection, payload.model_dump(), doc_id=doc_id),
@@ -488,9 +568,9 @@ def update_oe_document(
 def delete_oe_document(
     doc_id: int,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    delete_overhead_expense(connection, doc_id)
+    delete_overhead_expense(connection, doc_id, actor=current_user)
     return ApiMessage(message="Overhead expense marked for deletion")
 
 
@@ -498,9 +578,9 @@ def delete_oe_document(
 def restore_oe_document(
     doc_id: int,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    restore_overhead_expense(connection, doc_id)
+    restore_overhead_expense(connection, doc_id, actor=current_user)
     return ApiMessage(message="Overhead expense restored")
 
 
@@ -518,6 +598,7 @@ def distribute_overhead_endpoint(
         period=payload.period,
         allocation_base_id=payload.allocation_base_id,
         object_id=payload.object_id,
+        actor=current_user,
     )
     return ApiResponse(data=result, message="Overhead distributed")
 
@@ -528,7 +609,7 @@ def cancel_distribution_endpoint(
     current_user: Annotated[UserInfo, AdminOrManager],
     period: str = Query(..., description="YYYY-MM"),
 ) -> ApiMessage:
-    result = cancel_overhead_distribution(connection, period)
+    result = cancel_overhead_distribution(connection, period, actor=current_user)
     return ApiMessage(message=f"Distribution for {period} cancelled")
 
 
@@ -558,7 +639,7 @@ def list_cc_documents(
 def create_cc_document(
     payload: CostCalculationCreate,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiResponse:
     return ApiResponse(
         data=save_cost_calculation(connection, payload.model_dump()),
@@ -580,7 +661,7 @@ def update_cc_document(
     calc_id: int,
     payload: CostCalculationUpdate,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiResponse:
     return ApiResponse(
         data=save_cost_calculation(connection, payload.model_dump(), calc_id=calc_id),
@@ -592,10 +673,20 @@ def update_cc_document(
 def delete_cc_document(
     calc_id: int,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    delete_cost_calculation(connection, calc_id)
+    delete_cost_calculation(connection, calc_id, actor=current_user)
     return ApiMessage(message="Cost calculation marked for deletion")
+
+
+@router.post("/cost-calculations/{calc_id}/restore", response_model=ApiMessage)
+def restore_cc_document(
+    calc_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserInfo, AdminOrManager],
+) -> ApiMessage:
+    restore_cost_calculation(connection, calc_id, actor=current_user)
+    return ApiMessage(message="Cost calculation restored")
 
 
 @router.post("/cost-calculations/{calc_id}/calculate", response_model=ApiResponse)
@@ -604,7 +695,7 @@ def calculate_cost_endpoint(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiResponse:
-    result = calculate_cost(connection, calc_id)
+    result = calculate_cost(connection, calc_id, actor=current_user)
     return ApiResponse(data=result, message="Cost calculation executed")
 
 
@@ -614,7 +705,7 @@ def post_cc_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    post_cost_calculation(connection, calc_id)
+    post_cost_calculation(connection, calc_id, actor=current_user)
     return ApiMessage(message="Cost calculation posted")
 
 
@@ -624,7 +715,7 @@ def unpost_cc_document(
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserInfo, AdminOrManager],
 ) -> ApiMessage:
-    unpost_cost_calculation(connection, calc_id)
+    unpost_cost_calculation(connection, calc_id, actor=current_user)
     return ApiMessage(message="Cost calculation unposted")
 
 
@@ -801,9 +892,10 @@ async def import_doc_text(
     doc_id: int,
     request: Request,
     connection: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserInfo, Depends(get_current_user)],
+    current_user: Annotated[UserInfo, Depends(require_roles("admin", "manager"))],
     format: str = Query("tsv", description="tsv | json | xlsx"),
     replace: bool = Query(True, description="Replace existing lines"),
+    preview: bool = Query(False, description="Validate and resolve without saving"),
 ) -> ApiResponse:
     """Import tabular lines for a document.
 
@@ -816,7 +908,7 @@ async def import_doc_text(
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"Unsupported document kind: {doc_kind}")
 
-    raw = await request.body()
+    raw = await read_limited_import_body(request)
     if format == "xlsx":
         data: bytes | str = raw
     elif isinstance(raw, (bytes, bytearray)):
@@ -825,7 +917,7 @@ async def import_doc_text(
         data = raw or ""
 
     result = import_document_lines(
-        connection, doc_type, doc_id, fmt=format, data=data, replace=replace
+        connection, doc_type, doc_id, fmt=format, data=data, replace=replace, preview=preview
     )
     return ApiResponse(data=result, message=f"Imported {result.get('imported', 0)} lines")
 

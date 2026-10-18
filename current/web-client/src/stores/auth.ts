@@ -18,8 +18,12 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     isAuthenticated: (state) => Boolean(state.token && state.user),
     isAdmin: (state) => state.user?.role === 'admin',
+    canWriteTrade: (state) => ['admin', 'manager'].includes(state.user?.role ?? ''),
+    canManageAccess: (state) => state.user?.role === 'admin' && state.user?.organization_ids == null,
     // Matches the backend AdminOrManager guard used for posting / calculation / distribution.
     canManageCost: (state) => state.user?.role === 'admin' || state.user?.role === 'manager',
+    // RBAC=B: foremen may prepare their own field cost documents, but not lifecycle operations.
+    canPrepareFieldCost: (state) => ['admin', 'manager', 'foreman'].includes(state.user?.role ?? ''),
     displayName: (state) => state.user?.full_name || state.user?.username || 'Пользователь',
   },
   actions: {

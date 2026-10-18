@@ -2,10 +2,12 @@ import type { ApiResponse } from '../types/api'
 import type { OverdueItem, SettlementBalanceItem, SettlementLedgerItem, SettlementTurnoverRow } from '../types/models'
 import { apiRequest } from './client'
 
-function toQuery(params: Record<string, string | number | boolean | undefined>) {
+type QueryValue = string | number | boolean | null | undefined
+
+function toQuery(params: Record<string, QueryValue>) {
   const query = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== '') {
+    if (value !== undefined && value !== null && value !== '') {
       query.set(key, String(value))
     }
   })
@@ -20,7 +22,7 @@ export function getSettlementsBalance(params: {
   object_id?: number | null
   date?: string | null
 }) {
-  return apiRequest<ApiResponse<SettlementBalanceItem[]>>(`/api/settlements/balance${toQuery(params as Record<string, string | number | boolean | undefined>)}`)
+  return apiRequest<ApiResponse<SettlementBalanceItem[]>>(`/api/settlements/balance${toQuery(params)}`)
 }
 
 export function getSettlementsLedger(params: {
@@ -30,11 +32,11 @@ export function getSettlementsLedger(params: {
   date_from?: string | null
   date_to?: string | null
 }) {
-  return apiRequest<ApiResponse<SettlementLedgerItem[]>>(`/api/settlements/ledger${toQuery(params as Record<string, string | number | boolean | undefined>)}`)
+  return apiRequest<ApiResponse<SettlementLedgerItem[]>>(`/api/settlements/ledger${toQuery(params)}`)
 }
 
 export function getOverdue(params: { date?: string | null }) {
-  return apiRequest<ApiResponse<OverdueItem[]>>(`/api/settlements/overdue${toQuery(params as Record<string, string | number | boolean | undefined>)}`)
+  return apiRequest<ApiResponse<OverdueItem[]>>(`/api/settlements/overdue${toQuery(params)}`)
 }
 
 export function getSettlementsTurnover(params: {
@@ -44,5 +46,5 @@ export function getSettlementsTurnover(params: {
   counterparty_id?: number | null
   contract_id?: number | null
 }) {
-  return apiRequest<ApiResponse<SettlementTurnoverRow[]>>(`/api/settlements/turnover${toQuery(params as Record<string, string | number | boolean | undefined>)}`)
+  return apiRequest<ApiResponse<SettlementTurnoverRow[]>>(`/api/settlements/turnover${toQuery(params)}`)
 }

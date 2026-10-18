@@ -12,6 +12,12 @@
               <option v-for="o in objects" :key="o.id" :value="o.id">{{ o.name }}</option>
             </select>
           </FormField>
+          <FormField label="Склад">
+            <select v-model="filters.warehouse_id" class="select">
+              <option :value="''">Все склады</option>
+              <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+          </FormField>
           <FormField label="Материал">
             <select v-model="filters.material_id" class="select">
               <option :value="''">Все материалы</option>
@@ -55,7 +61,7 @@ import { getInventoryBalances } from '../../api/goods'
 import { listReferences } from '../../api/references'
 import { useHeaderBar } from '../../composables/useHeaderBar'
 import { downloadCsv } from '../../utils/reportExport'
-import type { InventoryBalanceItem, MaterialRecord, ObjectRecord } from '../../types/models'
+import type { InventoryBalanceItem, MaterialRecord, ObjectRecord, WarehouseRecord } from '../../types/models'
 
 const props = defineProps<{ tabId?: string }>()
 useHeaderBar(props.tabId, computed(() => 'Отчёт: Остатки ТМЦ'), computed(() => []))
@@ -65,12 +71,16 @@ const loading = ref(false)
 const error = ref('')
 const objects = ref<ObjectRecord[]>([])
 const materials = ref<MaterialRecord[]>([])
+const warehouses = ref<WarehouseRecord[]>([])
 
-const filters = reactive({ date: new Date().toISOString().slice(0, 10), object_id: '' as number | '', material_id: '' as number | '' })
+const filters = reactive({ date: new Date().toISOString().slice(0, 10), object_id: '' as number | '', material_id: '' as number | '', warehouse_id: '' as number | '' })
 
 const columns = [
+  { key: 'warehouse_name', label: 'Склад' },
   { key: 'material_code', label: 'Код' },
   { key: 'material_name', label: 'Наименование' },
+  { key: 'characteristic_name', label: 'Характеристика' },
+  { key: 'series_name', label: 'Серия' },
   { key: 'object_name', label: 'Объект' },
   { key: 'unit_name', label: 'Ед.' },
   { key: 'quantity_income', label: 'Приход' },
@@ -97,6 +107,7 @@ async function load() {
       date: filters.date || undefined,
       object_id: filters.object_id === '' ? null : Number(filters.object_id),
       material_id: filters.material_id === '' ? null : Number(filters.material_id),
+      warehouse_id: filters.warehouse_id === '' ? null : Number(filters.warehouse_id),
     })
     rows.value = res.data
   } catch (err) {
@@ -109,16 +120,17 @@ async function load() {
 function exportCsv() {
   downloadCsv(
     `Остатки_ТМЦ_${filters.date}`,
-    ['Код', 'Наименование', 'Объект', 'Ед.', 'Приход', 'Расход', 'Остаток', 'Сумма прихода', 'Ср. цена'],
-    rows.value.map((r) => [r.material_code, r.material_name, r.object_name, r.unit_name, r.quantity_income, r.quantity_expense, r.quantity_balance, r.sum_income, r.average_price]),
+    ['Склад', 'Код', 'Наименование', 'Характеристика', 'Серия', 'Объект', 'Ед.', 'Приход', 'Расход', 'Остаток', 'Сумма прихода', 'Ср. цена'],
+    rows.value.map((r) => [r.warehouse_name, r.material_code, r.material_name, r.characteristic_name, r.series_name, r.object_name, r.unit_name, r.quantity_income, r.quantity_expense, r.quantity_balance, r.sum_income, r.average_price]),
   )
 }
 
 onMounted(async () => {
   try {
-    const [objRes, matRes] = await Promise.all([listReferences('objects', { page_size: 200 }), listReferences('materials', { page_size: 500 })])
+    const [objRes, matRes, warehouseRes] = await Promise.all([listReferences('objects', { page_size: 200 }), listReferences('materials', { page_size: 500 }), listReferences('warehouses', { page_size: 500 })])
     objects.value = objRes.data as ObjectRecord[]
-    materials.value = matRes.data as MaterialRecord[]
+    materials.value = (matRes.data as MaterialRecord[]).filter((material) => !material.is_group)
+    warehouses.value = warehouseRes.data as WarehouseRecord[]
     await load()
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Ошибка загрузки справочников'

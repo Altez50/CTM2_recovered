@@ -8,7 +8,6 @@ import tempfile
 
 HOST = "192.168.0.39"
 USER = "kassir"
-PASS = "7535789"
 PORT = 22
 
 REMOTE_DB = "/srv/ctm/data/construction-ctm2.db"
@@ -21,9 +20,12 @@ REFERENCE_TABLES = [
 ]
 
 def main():
+    password = os.environ.get("CTM_KASSIR_PASS", "").strip()
+    if not password:
+        raise SystemExit("CTM_KASSIR_PASS is required")
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(HOST, port=PORT, username=USER, password=PASS, timeout=15)
+    ssh.connect(HOST, port=PORT, username=USER, password=password, timeout=15)
 
     # Find the latest backup
     stdin, stdout, stderr = ssh.exec_command(

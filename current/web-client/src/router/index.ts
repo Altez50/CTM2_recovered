@@ -22,6 +22,11 @@ const router = createRouter({
           component: () => import('../views/DashboardView.vue'),
         },
         {
+          path: 'administration/users',
+          name: 'user-access',
+          component: () => import('../views/UserAccessView.vue'),
+        },
+        {
           path: 'references/works',
           name: 'work-list',
           component: () => import('../views/references/WorkCatalogView.vue'),
@@ -298,9 +303,97 @@ const router = createRouter({
           meta: { workspace: true },
         },
         {
+          path: 'goods/opening-balances', name: 'opening-balance-list',
+          component: () => import('../views/goods/OpeningBalanceListView.vue'),
+        },
+        {
+          path: 'goods/opening-balances/new', name: 'opening-balance-create',
+          component: () => import('../views/goods/OpeningBalanceFormView.vue'), meta: { workspace: true },
+        },
+        {
+          path: 'goods/opening-balances/:id', name: 'opening-balance-edit', props: true,
+          component: () => import('../views/goods/OpeningBalanceFormView.vue'), meta: { workspace: true },
+        },
+        {
+          path: 'reports/inventory-turnover', name: 'inventory-turnover-report',
+          component: () => import('../views/reports/InventoryTurnoverReport.vue'), meta: { workspace: true },
+        },
+        {
+          path: 'goods/price-adjustments', name: 'goods-price-adjustment-list',
+          component: () => import('../views/goods/GoodsPriceAdjustmentListView.vue'),
+        },
+        {
+          path: 'goods/price-adjustments/new', name: 'goods-price-adjustment-create',
+          component: () => import('../views/goods/GoodsPriceAdjustmentFormView.vue'), meta: { workspace: true },
+        },
+        {
+          path: 'goods/price-adjustments/:id', name: 'goods-price-adjustment-edit', props: true,
+          component: () => import('../views/goods/GoodsPriceAdjustmentFormView.vue'), meta: { workspace: true },
+        },
+        {
+          path: 'goods/returns', name: 'goods-return-list',
+          component: () => import('../views/goods/GoodsReturnListView.vue'),
+        },
+        {
+          path: 'goods/returns/new', name: 'goods-return-create',
+          component: () => import('../views/goods/GoodsReturnFormView.vue'), meta: { workspace: true },
+        },
+        {
+          path: 'goods/returns/:id', name: 'goods-return-edit', props: true,
+          component: () => import('../views/goods/GoodsReturnFormView.vue'), meta: { workspace: true },
+        },
+        {
+          path: 'goods/transfers',
+          name: 'goods-transfer-list',
+          component: () => import('../views/goods/GoodsTransferListView.vue'),
+        },
+        {
+          path: 'goods/transfers/new',
+          name: 'goods-transfer-create',
+          component: () => import('../views/goods/GoodsTransferFormView.vue'),
+          meta: { workspace: true },
+        },
+        {
+          path: 'goods/transfers/:id',
+          name: 'goods-transfer-edit',
+          component: () => import('../views/goods/GoodsTransferFormView.vue'),
+          props: true,
+          meta: { workspace: true },
+        },
+        {
           path: 'sync',
           name: 'sync',
           component: () => import('../views/SyncView.vue'),
+        },
+        {
+          path: 'sales/:saleKind(orders|realizations|expense-orders|cancellations)',
+          name: 'sale-list', component: () => import('../views/sales/SaleListView.vue'),
+          props: route => ({ kind: route.params.saleKind }), meta: { workspace: true },
+        },
+        {
+          path: 'sales/:saleKind(orders|realizations|expense-orders|cancellations)/new',
+          name: 'sale-create', component: () => import('../views/sales/SaleFormView.vue'),
+          props: route => ({ kind: route.params.saleKind }), meta: { workspace: true },
+        },
+        {
+          path: 'sales/:saleKind(orders|realizations|expense-orders|cancellations)/:id',
+          name: 'sale-edit', component: () => import('../views/sales/SaleFormView.vue'),
+          props: route => ({ kind: route.params.saleKind, id: route.params.id }), meta: { workspace: true },
+        },
+        {
+          path: 'purchases/:purchaseKind(orders|acquisitions|receipt-orders|cancellations|discrepancies|quantity-adjustments)',
+          name: 'purchase-list', component: () => import('../views/purchases/PurchaseListView.vue'),
+          props: route => ({ kind: route.params.purchaseKind }), meta: { workspace: true },
+        },
+        {
+          path: 'purchases/:purchaseKind(orders|acquisitions|receipt-orders|cancellations|discrepancies|quantity-adjustments)/new',
+          name: 'purchase-create', component: () => import('../views/purchases/PurchaseFormView.vue'),
+          props: route => ({ kind: route.params.purchaseKind }), meta: { workspace: true },
+        },
+        {
+          path: 'purchases/:purchaseKind(orders|acquisitions|receipt-orders|cancellations|discrepancies|quantity-adjustments)/:id',
+          name: 'purchase-edit', component: () => import('../views/purchases/PurchaseFormView.vue'),
+          props: route => ({ kind: route.params.purchaseKind, id: route.params.id }), meta: { workspace: true },
         },
         {
           path: 'engineering/tables',
@@ -325,7 +418,7 @@ router.beforeEach(async (to) => {
     return { name: 'dashboard' }
   }
 
-  if (to.meta.requiresAdmin && !auth.isAdmin) {
+  if (to.meta.requiresAdmin && !auth.canManageAccess) {
     return { name: 'dashboard' }
   }
 
